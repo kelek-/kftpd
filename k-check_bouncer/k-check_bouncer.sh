@@ -53,6 +53,7 @@
 # Changelog:                                                           #
 #---                                                                   #
 # v0.1k (8/20/2016) Initial release                                    #
+# v0.2k (8/20/2016) Commented the code properly                        #
 #----------------------------------------------------------------------#
 
 
@@ -65,8 +66,8 @@ source k-curl_codes.sh || { echo "ERROR: k-curl_codes.sh could not be loaded!"; 
 exec 2>&9; exec 9>&-
 
 
-readonly BNC_USER="user"						# User to login to your site
-readonly BNC_PASSWORD="password"	                        	# Password of the user
+readonly BNC_USER="user"                                                # User to login to your site
+readonly BNC_PASSWORD="password"                                        # Password of the user
 readonly BNC_SSL=true                                                   # Connect to the bouncer via SSL
 declare -ir BNC_TIMEOUT=5                                               # Timeout of how long we should wait until we stop the connecting process
 readonly FORMAT_DECIMAL=true                                            # Output the IP address formatted as decimal          \   only one of these can be used
@@ -76,28 +77,49 @@ readonly TRACEROUTE_HOST=false                                          # Tracer
 declare -ir MAX_HOPS=25                                                 # Maximum hops it should trace - remember, the more hops the longer it takes and the longer the runtime of this script is
 readonly GLFTPD_ROOT_PATH="/glftpd"                                     # Well ..
 readonly BNC_FILE="/ftp-data/misc/bouncer.list"                         # File the bouncer data is stored in - relative path!
-readonly DEBUG=false                                                    # Get verbose output
+readonly DEBUG=true                                                     # Get verbose output
+readonly DATE_FORMAT="%D %H:%M:%S %Z"                                   # Format the output from GNU date (date -h too check whats possible) - remember: garbage in, garbage out!
 
 
 #
 # UNIQUE!! name needed to work properly
 # format: ip:port
 declare -Ar BOUNCER=(
-  ["Netherlands"]="255.255.255.255:31337"
-  ["Hongkong"]="46.46.46.46:31337"
-  ["UnitedKingdom"]="213.213.213.213:31337"
 )
+
 
 
 #
 # these are the settings for each bouncer, you defined above
-# format: TIMEOUT_SEC:BNC_USER:BNC_PASSWORD:BNC_SSL:BNC_COUNTRY_CODE:BNC_DISPLAY_NAME
+# format: TIMEOUT_SEC:BNC_USER:BNC_PASSWORD:BNC_SSL:BNC_TLD:BNC_COUNTRY:BNC_NICKNAME:BNC_LOCATION
 #
 declare -Ar BOUNCER_SETTINGS=(
-  ["Netherlands"]="${BNC_TIMEOUT}%\"${BNC_USER}\"%\"${BNC_PASSWORD}\"%\"${BNC_SSL}\"%\"nl\"%\"Netherlands\"%\"Daan\"%\"Located in Zuid-Holland\\Rotterdam at i3d B.V.\""
-  ["Hongkong"]="90%\"${BNC_USER}\"%\"${BNC_PASSWORD}\"%\"${BNC_SSL}\"%\"kr\"%\"Somewhere in asia\"%\"Yun\"%\"Located in Kyonggi-do\\Seongnam at Korea Telecom\""
-  ["UnitedKingdom"]="60%\"${BNC_USER}\"%\"${BNC_PASSWORD}\"%\"${BNC_SSL}\"%\"uk\"%\"United Kingdom\"%\"Charles\"%\"Located in England\\London at Hosting Services Inc\""
 )
+
+
+#
+# these settings will determine how your output of the different bouncers will be
+#
+# available variables:
+# %%BNC_HOST%%              -> Host of the bouncer from $BOUNCER
+# %%BNC_PORT%%              -> Port of the bouncer from $BOUNCER
+# %%BNC_HOST_HEXADECIMAL%%  -> Host of the bouncer from $BOUNCER in hexadecimal (calculated)
+# %%BNC_HOST_DECIMAL%%      -> Host of the bouncer from $BOUNCER in decimal (calculated)
+# %%BNC_USER%%              -> User from $BNC_USER
+# %%BNC_PASSWORD%%          -> Password from $BNC_USER
+# %%BNC_SSL%%               -> Value from BNC_SSL. 1 = SSL; 0 = NONSSL
+# %%BNC_TIMEOUT%%           -> Bouncer timeout time from either $BNC_TIMEOUT or if set individually in $BOUNCER_SETTINGS
+# %%BNC_TLD%%               -> TLD from $BOUNCER_SETTINGS
+# %%BNC_COUNTRY%%           -> Name of the country from $BOUNCER_SETTINGS
+# %%BNC_NICKNAME%%          -> Nickname of the bouncer from $BOUNCER_SETTINGS
+# %%BNC_LOCATION%%          -> Location of the bouncer (city) from $BOUNCER_SETTINGS
+# %%BNC_PINGTIME%%          -> Pingtime of the bouncer (calculated)
+# %%BNC_LOGINTIME%%         -> Logintime of the bouncer (calculated)
+# %%BNC_HOPS%%              -> Hops to the bouncer (calculated)
+# %%BNC_LAST_CHECKED%%      -> Time when the bouncer was checked the last time (calculated)
+declare -A BOUNCER_OUTPUT=(
+)
+
 
 #                                            #
 # < - C O D E   B E G I N S   B E L O W  - > #
@@ -111,23 +133,58 @@ BNC_PING_TIME=-1
 BNC_HOPS=-1
 
 
+
+#-----------------------------
+# init
+#------
+# Description:
+#   Initialize the script and check for necessary binaries
+#------
+# Globals:
+#   BNC_USER         (r)
+#   BNC_PASSWORD     (r)
+#   BNC_SSL          (r)
+#   BNC_TIMEOUT      (r)
+#   PING_HOST        (r)
+#   TRACEROUTE_HOST  (r)
+#   MAX_HOPS         (r)
+#   DEBUG            (r)
+#   GLFTPD_ROOT_PATH (r)
+#   BNC_FILE         (r)
+#------
+# Arguments:
+#   none
+#------
+# Returns:
+#   nothing, but exits if not all necessary binaries are present, necessary 
+#   files are not writeable or invalid values are set
+#-----------------------------
 function init () {
+  if ${DEBUG}; then
+    echo "DEBUG: Entered function 'init' with values:"
+    echo "DEBUG: '${@}'"
+  fi
+
+  # OBSOLETE
+  [[ "${FORMAT_DECIMAL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${FORMAT_DECIMAL}') for 'FORMAT_DECIMAL' set. Only 'true' or 'false (without '') is valid."; exit 1; }
+  [[ "${FORMAT_HEXADECIMAL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${FORMAT_HEXADECIMAL}') for 'FORMAT_HEXADECIMAL' set. Only 'true' or 'false (without '') is valid."; exit 1; }
+  ( [ ${FORMAT_DECIMAL} ] && [ ${FORMAT_HEXADECIMAL} ] ) || { echo "ERROR: Both 'FORMAT_DECIMAL' and 'FORMAT_HEXADECIMAL' are set - choose one of both."; exit 1; }
+
+
   # validate variables and values
   [ -n "${BNC_USER}" ] || { echo "ERROR: 'BNC_USER' is not set."; exit 1; }
   [ -n "${BNC_PASSWORD}" ] || { echo "ERROR: 'BNC_PASSWORD' is not set."; exit 1; }
   [[ "${BNC_SSL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${BNC_SSL}') for 'BNC_SSL' set. Only 'true' or 'false' (without '') is valid."; exit 1; }
   [[ "${BNC_TIMEOUT}" =~ ^[[:digit:]]+$ ]] || { echo "ERROR: Invalid value ('${BNC_TIMEOUT}') for 'BNC_TIMEOUT' set. Only digits are valid."; exit 1; }
   [ ${BNC_TIMEOUT} -gt 0 ] || { echo "ERROR: A value of less than 1 makes no sense for timeout!"; exit 1; }
-  [[ "${FORMAT_DECIMAL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${FORMAT_DECIMAL}') for 'FORMAT_DECIMAL' set. Only 'true' or 'false (without '') is valid."; exit 1; }
-  [[ "${FORMAT_HEXADECIMAL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${FORMAT_HEXADECIMAL}') for 'FORMAT_HEXADECIMAL' set. Only 'true' or 'false (without '') is valid."; exit 1; }
   [[ "${PING_HOST}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${PING_HOST}') for 'PING_HOST' set. Only 'true' or 'false (without '') is valid."; exit 1; }
   [[ "${TRACEROUTE_HOST}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${TRACEROUTE_HOST}') for 'TRACEROUTE_HOST' set. Only 'true' or 'false (without '') is valid."; exit 1; }
   if ${TRACEROUTE_HOST}; then
     [[ "${MAX_HOPS}" =~ ^[[:digit:]]+$ ]] || { echo "ERROR: Invalid value ('${MAX_HOPS}') for 'MAX_HOPS' set. Only digits are valid."; exit 1; }
     ( [ ${MAX_HOPS} -lt 256 ] && [ ${MAX_HOPS} -gt 0 ] ) || { echo "ERROR: Invalid value ('${MAX_HOPS}') for 'MAX_HOPS' set. Maximum allowed is 255 and minimum allowed is 1."; exit 1; }
   fi
+  [[ "${DEBUG}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${DEBUG}') for 'DEBUG' set. Only 'true' and' 'false' (without '') is valid."; exit 1; }
 
-  ( [ ${FORMAT_DECIMAL} ] && [ ${FORMAT_HEXADECIMAL} ] ) || { echo "ERROR: Both 'FORMAT_DECIMAL' and 'FORMAT_HEXADECIMAL' are set - choose one of both."; exit 1; }
   # check for necessary programs
   command -v curl 2>&1 > /dev/null || { echo "ERROR: 'curl' is needed to run this script!"; exit 1; }
   command -v sed 2>&1 > /dev/null ||{ echo "ERROR: 'sed' is needed to run this script!"; exit 1; }
@@ -162,16 +219,43 @@ function init () {
 } #; init ( )
 
 
+#-----------------------------
+# get_status <host> <port> <user> <password> <timeout> <useSsl>
+#------
+# Description:
+#   Gets the current status of the given host. This means in
+#   particular it determines if the host is down or up. 
+#   Additionally it calculates the time it needs to login to the
+#   site via this host. Both the hosts status and the login time
+#   gets written to $BNC_STATUS and $BNC_LOGIN_TIME.
+#------
+# Globals:
+#   DEBUG          (r)
+#   BNC_LOGIN_TIME (w)
+#   BNC_STATUS     (w)
+#------
+# Arguments:
+#   $1 - $host      : string  -> Host of the bouncer
+#   $2 - $port      : integer -> Port of the bouncer
+#   $3 - $user      : string  -> User to login with to the bouncer
+#   $4 - $password  : string  -> Password for the user
+#   $5 - $timeout   : integer -> Time in seconds until the connection gets canceled if no response can be retrieved
+#   $6 - $useSsl    : boolean -> Determines if connection is done via SSL or not
+#------
+# Returns:
+#   0: Host is down
+#   1: Host is up
+#   2: Not enough arguments given
+#-----------------------------
 function get_status () {
   if ${DEBUG}; then
-    echo "DEBUG: Entered function get_status"
-    echo "DEBUG: Values retrieved:"
-    echo "DEBUG: ${@}"
+    echo "DEBUG: Entered function 'get_status' with values:"
+    echo "DEBUG: '${@}'"
   fi
 
   if [ $# -lt 6 ]; then
     echo "ERROR: get_status -> Not enough arguments given"
-    return 1
+    return 2
   fi
   
   local host="${1}"
@@ -199,10 +283,35 @@ function get_status () {
   BNC_LOGIN_TIME=$(echo ${BNC_LOGIN_TIME//.} | sed 's/^0*//')
  
   return ${BNC_STATUS}
-} # function check_status <host> <port> <user> <password> <timeout> <useSsl>
+} #; function get_status <host> <port> <user> <password> <timeout> <useSsl>
 
 
+
+#-----------------------------
+# get_status <host> <timeout> [count]
+#------
+# Description:
+# Ping a host and record the time it takes to reach the host.
+# The ping time gets written to $BNC_PING_TIME.
+#------
+# Globals:
+#   DEBUG          (r)
+#   BNC_PING_TIME  (w)
+#------
+# Arguments:
+#   $1 - $host      : string  -> Host of the bouncer
+#   $2 - $timeout   : integer -> Time in seconds until the connection gets canceled if no response can be retrieved
+#   $3 - $count     : integer -> How many ICMP packets should be sent. Default: 1.
+#------
+# Returns:
+#  It sets BNC_PING_TIME
+#-----------------------------
 function get_ping () {
+  if ${DEBUG}; then
+    echo "DEBUG: Entered function 'get_ping' with values:"
+    echo "DEBUG: '${@}'"
+  fi
+
   if [ $# -lt 2 ]; then
     echo "ERROR: get_ping -> Not enough arguments given"
     return 1
@@ -220,10 +329,34 @@ function get_ping () {
   # reset ping time first
   BNC_PING_TIME=-1
   BNC_PING_TIME=$([[ $(ping -q -c"${count}" "${host}") =~ \ =\ [^/]*/([0-9]+\.[0-9]).*ms ]] && echo ${BASH_REMATCH[1]})
-} # function get_ping <host> <timeout> [count]
+} #; function get_ping <host> <timeout> [count]
 
 
+
+#-----------------------------
+# get_hops <host>
+#------
+# Description:
+#  Trace the route to the host and count the hops. The maximum hops are set
+#  with $MAX_HOPS.
+#------
+# Globals:
+#   DEBUG          (r)
+#   BNC_HOPS       (w)
+#   MAX_HOPS       (r)
+#------
+# Arguments:
+#   $1 - $host      : string  -> Host of the bouncer
+#------
+# Returns:
+#  It sets BNC_HOPS
+#-----------------------------
 function get_hops () {
+  if ${DEBUG}; then
+    echo "DEBUG: Entered function 'get_hops' with values:"
+    echo "DEBUG: '${@}'"
+  fi
+
   if [ $# -lt 1 ]; then
     echo "ERROR: get_hops -> Not enough arguments given"
     return 1
@@ -234,10 +367,31 @@ function get_hops () {
   BNC_HOPS=-1
   # first line cant be surpressed from traceroute, so we need to subtract 1 from the total hops
   BNC_HOPS=$(echo "$(traceroute -m${MAX_HOPS} "${host}" | wc -l) - 1" | bc)
-} # get_hops <host>
+} #; functions get_hops <host>
 
 
+#-----------------------------
+# ip2dec <ip>
+#------
+# Description:
+#  Transform an ip address to an decimal value
+#  Sloppy implementation ..
+#------
+# Globals:
+#  DEBUG (r)
+#------
+# Arguments:
+#   $1 - $ip      : string  -> IP to transform
+#------
+# Returns:
+#  The transformed ip address
+#-----------------------------
 function ip2dec () {
+  if ${DEBUG}; then
+    echo "DEBUG: Entered function 'ip2dec' with values:"
+    echo "DEBUG: '${@}'"
+  fi
+
   local a b c d ip=$@
   IFS=. read -r a b c d <<< "$ip"
   printf '%d\n' "$((a * 256 ** 3 + b * 256 ** 2 + c * 256 + d))"
@@ -245,13 +399,41 @@ function ip2dec () {
 } #; function ip2dec <ip> 
 
 
+#-----------------------------
+# ip2hex <ip>
+#------
+# Description:
+#  Transform an ip address to an hexadecimal value.
+#  Sloppy implementation .. 
+#------
+# Globals:
+#  DEBUG (r)
+#------
+# Arguments:
+#   $1 - $ip      : string  -> IP to transform
+#------
+# Returns:
+#  The transformed ip address
+#-----------------------------
 function ip2hex () {
+  if ${DEBUG}; then
+    echo "DEBUG: Entered function 'ip2hex' with values:"
+    echo "DEBUG: '${@}'"
+  fi
+
   local a b c d ip=$@
   IFS=. read -r a b c d <<< "$ip"
   printf '%02X' $a $b $c $d
   printf "\n"
 } #; function ip2hex <ip>
 
+function format_output () {
+echo "TODO"
+}
+
+#
+# BEGIN!
+#
 
 #
 # first split the settings line and assign it to variables
