@@ -54,6 +54,8 @@
 #---                                                                   #
 # v0.1k (8/20/2016) Initial release                                    #
 # v0.2k (8/20/2016) Commented the code properly                        #
+# v0.5k (8/20/2016) Function format_output added. Code improvements    #
+#                   NOT working in this state - next week more.        #
 #----------------------------------------------------------------------#
 
 
@@ -97,29 +99,41 @@ declare -Ar BOUNCER_SETTINGS=(
 )
 
 
+
 #
 # these settings will determine how your output of the different bouncers will be
 #
 # available variables:
-# %%BNC_HOST%%              -> Host of the bouncer from $BOUNCER
-# %%BNC_PORT%%              -> Port of the bouncer from $BOUNCER
-# %%BNC_HOST_HEXADECIMAL%%  -> Host of the bouncer from $BOUNCER in hexadecimal (calculated)
-# %%BNC_HOST_DECIMAL%%      -> Host of the bouncer from $BOUNCER in decimal (calculated)
-# %%BNC_USER%%              -> User from $BNC_USER
-# %%BNC_PASSWORD%%          -> Password from $BNC_USER
-# %%BNC_SSL%%               -> Value from BNC_SSL. 1 = SSL; 0 = NONSSL
-# %%BNC_TIMEOUT%%           -> Bouncer timeout time from either $BNC_TIMEOUT or if set individually in $BOUNCER_SETTINGS
-# %%BNC_TLD%%               -> TLD from $BOUNCER_SETTINGS
-# %%BNC_COUNTRY%%           -> Name of the country from $BOUNCER_SETTINGS
-# %%BNC_NICKNAME%%          -> Nickname of the bouncer from $BOUNCER_SETTINGS
-# %%BNC_LOCATION%%          -> Location of the bouncer (city) from $BOUNCER_SETTINGS
-# %%BNC_PINGTIME%%          -> Pingtime of the bouncer (calculated)
-# %%BNC_LOGINTIME%%         -> Logintime of the bouncer (calculated)
-# %%BNC_HOPS%%              -> Hops to the bouncer (calculated)
-# %%BNC_LAST_CHECKED%%      -> Time when the bouncer was checked the last time (calculated)
-declare -A BOUNCER_OUTPUT=(
+# variable                    -> description                                                                                < can be used with template
+#-------------------------------------------------------------------------------------------------------------------------------------------------------
+# %%BNC_NUMBER%%              -> Number of the bouncer - just an incrementing number starting from 0                        < online, offline
+# %%BNC_UNIQUE_NAME%%         -> Unique name of the bouncer - the key of $BOUNCER                                           < online, offline
+# %%BNC_HOST%%                -> Host of the bouncer from $BOUNCER                                                          < online, offline
+# %%BNC_PORT%%                -> Port of the bouncer from $BOUNCER                                                          < online, offline
+# %%BNC_HOST_HEXADECIMAL%%    -> Host of the bouncer from $BOUNCER in hexadecimal (calculated)                              < online, offline
+# %%BNC_HOST_DECIMAL%%        -> Host of the bouncer from $BOUNCER in decimal (calculated)                                  < online, offline
+# %%BNC_USER%%                -> User from $BNC_USER                                                                        < online, offline
+# %%BNC_PASSWORD%%            -> Password from $BNC_USER                                                                    < online, offline
+# %%BNC_SSL%%                 -> Value from BNC_SSL. 1 = SSL; 0 = NONSSL                                                    < online, offline
+# %%BNC_TIMEOUT%%             -> Bouncer timeout time from either $BNC_TIMEOUT or if set individually in $BOUNCER_SETTINGS  < online, offline
+# %%BNC_TLD%%                 -> TLD from $BOUNCER_SETTINGS                                                                 < online, offline
+# %%BNC_COUNTRY%%             -> Name of the country from $BOUNCER_SETTINGS                                                 < online, offline
+# %%BNC_NICKNAME%%            -> Nickname of the bouncer from $BOUNCER_SETTINGS                                             < online, offline
+# %%BNC_LOCATION%%            -> Location of the bouncer (city) from $BOUNCER_SETTINGS                                      < online, offline
+# %%BNC_PING_TIME%%           -> Pingtime of the bouncer (calculated)                                                       < online
+# %%BNC_LOGIN_TIME%%          -> Logintime of the bouncer (calculated)                                                      < online
+# %%BNC_HOPS%%                -> Hops to the bouncer (calculated)                                                           < online
+# %%BNC_LAST_CHECKED%%        -> Time when the bouncer was checked the last time (calculated)                               < online, offline
+# %%CURL_ERROR_CODE%%         -> Error code of curl (if an error while connecting happens)                                  < offline
+# %%CURL_ERROR_DESCRIPTION%%  -> Description of the curl error (if an error while connecting happens)                       < offline
+#
+
+declare -A BOUNCER_ONLINE_TEMPLATE=(
 )
 
+declare -A BOUNCER_OFFLINE_TEMPLATE=(
+  
+)
 
 #                                            #
 # < - C O D E   B E G I N S   B E L O W  - > #
@@ -127,10 +141,16 @@ declare -A BOUNCER_OUTPUT=(
 
 
 # global variables to hold some values
-BNC_STATUS=-1
-BNC_LOGIN_TIME=-1
-BNC_PING_TIME=-1
-BNC_HOPS=-1
+CURRENT_BNC_STATUS=-1
+CURRENT_BNC_LOGIN_TIME=-1
+CURRENT_BNC_PING_TIME=-1
+CURRENT_BNC_HOPS=-1
+CURRENT_BNC_NAME=""
+declare -A BOUNCER_COUNT_OF_HOPS
+declare -A BOUNCER_PING_TIMES
+declare -A BOUNCER_LOGIN_TIMES
+declare -A BOUNCER_LAST_CHECKED_TIMES
+declare -A BOUNCER_OUTPUT
 
 
 
@@ -227,12 +247,15 @@ function init () {
 #   particular it determines if the host is down or up. 
 #   Additionally it calculates the time it needs to login to the
 #   site via this host. Both the hosts status and the login time
-#   gets written to $BNC_STATUS and $BNC_LOGIN_TIME.
+#   gets written to $CURRENT_BNC_STATUS and $BNC_LOGIN_TIME.
+#   Also the $BNC_LOGIN_TIME gets added to the array $BOUNCER_LOGIN_TIMES
 #------
 # Globals:
-#   DEBUG          (r)
-#   BNC_LOGIN_TIME (w)
-#   BNC_STATUS     (w)
+#   DEBUG                  (r)
+#   CURRENT_BNC_LOGIN_TIME (w)
+#   CURRENT_BNC_STATUS     (w)
+#   CURRENT_BNC_NAME       (r)
+#   BOUNCER_LOGIN_TIMES    (w)
 #------
 # Arguments:
 #   $1 - $host      : string  -> Host of the bouncer
@@ -269,18 +292,21 @@ function get_status () {
     if ${DEBUG}; then
       echo "DEBUG: Executing \'curl -o /dev/null -s -w "%{time_total}" --disable-epsv --max-time "${timeout}" --ftp-ssl --insecure -u "${user}":"${password}" ftp://"${host}":"${port}" --ftp-port 1\'"
     fi
-    BNC_LOGIN_TIME=$(curl -o /dev/null -s -w "%{time_total}" --disable-epsv --max-time "${timeout}" --ftp-ssl --insecure -u "${user}":"${password}" ftp://"${host}":"${port}" --ftp-port 1)
-    BNC_STATUS=$?
+    CURRENT_BNC_LOGIN_TIME=$(curl -o /dev/null -s -w "%{time_total}" --disable-epsv --max-time "${timeout}" --ftp-ssl --insecure -u "${user}":"${password}" ftp://"${host}":"${port}" --ftp-port 1)
+    CURRENT_BNC_STATUS=$?
   else #; nonssl
     if ${DEBUG}; then
       echo "DEBUG: Executing \'curl -o /dev/null -s -w "%{time_total}" --disable-epsv --max-time "${timeout}" --insecure -u "${user}":"${password}" ftp://"${host}":"${port}" --ftp-port 1\'"
     fi
-    BNC_LOGIN_TIME=$(curl -o /dev/null -s -w "%{time_total}" --disable-epsv --max-time "${timeout}" --insecure -u "${user}":"${password}" ftp://"${host}":"${port}" --ftp-port 1)
-    BNC_STATUS=$?
+    CURRENT_BNC_LOGIN_TIME=$(curl -o /dev/null -s -w "%{time_total}" --disable-epsv --max-time "${timeout}" --insecure -u "${user}":"${password}" ftp://"${host}":"${port}" --ftp-port 1)
+    CURRENT_BNC_STATUS=$?
   fi
 
   # remove the dot and leading zero (if present)
-  BNC_LOGIN_TIME=$(echo ${BNC_LOGIN_TIME//.} | sed 's/^0*//')
+  CURRENT_BNC_LOGIN_TIME=$(echo ${CURRENT_BNC_LOGIN_TIME//.} | sed 's/^0*//')
+
+  # add it to the array of login times
+  BOUNCER_LOGIN_TIMES["${CURRENT_BNC_NAME}"]="${CURRENT_BNC_LOGIN_TIME}" 
  
   return ${BNC_STATUS}
 } #; function get_status <host> <port> <user> <password> <timeout> <useSsl>
@@ -292,11 +318,13 @@ function get_status () {
 #------
 # Description:
 # Ping a host and record the time it takes to reach the host.
-# The ping time gets written to $BNC_PING_TIME.
+# The ping time gets written to $BNC_PING_TIME and added to
+# the array $BOUNCER_PING_TIMES.
 #------
 # Globals:
-#   DEBUG          (r)
-#   BNC_PING_TIME  (w)
+#   DEBUG                  (r)
+#   CURRENT_BNC_PING_TIME  (w)
+#   BOUNCER_PING_TIMES     (w)
 #------
 # Arguments:
 #   $1 - $host      : string  -> Host of the bouncer
@@ -304,7 +332,7 @@ function get_status () {
 #   $3 - $count     : integer -> How many ICMP packets should be sent. Default: 1.
 #------
 # Returns:
-#  It sets BNC_PING_TIME
+#  It sets CURRENT_BNC_PING_TIME and adds its value to $BOUNCER_PING_TIMES aswell.
 #-----------------------------
 function get_ping () {
   if ${DEBUG}; then
@@ -327,8 +355,12 @@ function get_ping () {
   fi
   
   # reset ping time first
-  BNC_PING_TIME=-1
-  BNC_PING_TIME=$([[ $(ping -q -c"${count}" "${host}") =~ \ =\ [^/]*/([0-9]+\.[0-9]).*ms ]] && echo ${BASH_REMATCH[1]})
+  CURRENT_BNC_PING_TIME=-1
+  CURRENT_BNC_PING_TIME=$([[ $(ping -q -c"${count}" "${host}") =~ \ =\ [^/]*/([0-9]+\.[0-9]).*ms ]] && echo ${BASH_REMATCH[1]})
+
+  # add it to the array of ping times
+  BOUNCER_PING_TIMES["${CURRENT_BNC_NAME}"]="${CURRENT_BNC_PING_TIME}"
+  
 } #; function get_ping <host> <timeout> [count]
 
 
@@ -338,18 +370,19 @@ function get_ping () {
 #------
 # Description:
 #  Trace the route to the host and count the hops. The maximum hops are set
-#  with $MAX_HOPS.
+#  with $MAX_HOPS and added to $BOUNCER_COUNT_OF_HOPS
 #------
 # Globals:
-#   DEBUG          (r)
-#   BNC_HOPS       (w)
-#   MAX_HOPS       (r)
+#   DEBUG                 (r)
+#   CURRENT_BNC_HOPS      (w)
+#   MAX_HOPS              (r)
+#   BOUNCER_COUNT_OF_HOPS (w)
 #------
 # Arguments:
 #   $1 - $host      : string  -> Host of the bouncer
 #------
 # Returns:
-#  It sets BNC_HOPS
+#  It sets CURRENT_BNC_HOPS and adds its value to $BOUNCER_COUNT_OF_HOPS
 #-----------------------------
 function get_hops () {
   if ${DEBUG}; then
@@ -364,9 +397,13 @@ function get_hops () {
   
   local host="${1}"
 
-  BNC_HOPS=-1
+  # reset it first
+  CURRENT_BNC_HOPS=-1
   # first line cant be surpressed from traceroute, so we need to subtract 1 from the total hops
-  BNC_HOPS=$(echo "$(traceroute -m${MAX_HOPS} "${host}" | wc -l) - 1" | bc)
+  CURRENT_BNC_HOPS=$(echo "$(traceroute -m${MAX_HOPS} "${host}" | wc -l) - 1" | bc)
+
+  # add it to the array of hops
+  BOUNCER_COUNT_OF_HOPS["${CURRENT_BNC_NAMES}"]="${CURRENT_BNC_HOPS}"
 } #; functions get_hops <host>
 
 
@@ -427,9 +464,92 @@ function ip2hex () {
   printf "\n"
 } #; function ip2hex <ip>
 
+
+#-----------------------------
+# format_output <format_line> <bncNumber> <bncUniqueName> <bncName> <bncHost> <bncPort> <bncUser> <bncPassword> 
+#               <bncSsl> <bncTimeout> <bncTld> <bncCountry> <bncNickname> <bncLocation> <bncPingTime> <bncLoginTime> 
+#               <bncHops> <bncStatus> <bncLastChecked> <curlErrorCode> <curlErrorDescription>
+#------
+# Description:
+#  Replace the variables in the given string and set it into $BOUNCER_OUTPUT
+#------
+# Globals:
+#  DEBUG (r)
+#------
+# Arguments:
+#   $1 - $ip      : string  -> IP to transform
+#------
+# Returns:
+#  The transformed ip address
+#-----------------------------
 function format_output () {
-echo "TODO"
-}
+  if ${DEBUG}; then
+    echo "DEBUG: Entered function 'format_output' with values:"
+    echo "DEBUG: '${@}'"
+  fi
+
+#  if [[ $# -lt 21 ]]; then
+#    echo "ERROR: Function 'format_output' did not recieve enough arguments!"; exit 1
+#  fi
+
+  local formatLine="${1}"
+  local bncNumber="${2}"
+  local bncUniqueName="${3}"
+  local bncName="${4}"
+  local bncHost="${5}"
+  local bncPort="${6}"
+  local bncUser="${7}"
+  local bncPassword="${8}"
+  local bncSsl="${9}"
+  local bncTimeout="${10}"
+  local bncTld="${11}"
+  local bncCountry="${12}"
+  local bncNickname="${13}"
+  local bncLocation="${14}"
+  local bncPingTime="${15}"
+  local bncLoginTime="${16}"
+  local bncHops="${17}"
+  local bncStatus="${18}"
+  local bncLastChecked="${19}"
+  local curlErrorCode="${20}"
+  local curlErrorDescription="${21}"
+
+  # replace all variables
+  formatLine="${formatLine//%%BNC_NUMBER%%/${bncNumber}}"
+  formatLine="${formatLine//%%BNC_UNIQUE_NAME%%/${bncUniqueName}}"
+  formatLine="${formatLine//%%BNC_HOST%%/${bncHost}}"
+  formatLine="${formatLine//%%BNC_PORT%%/${bncPort}}"
+  formatLine="${formatLine//%%BNC_USER%%/${bncUser}}"
+  formatLine="${formatLine//%%BNC_PASSWORD%%/${bncPassword}}"
+  formatLine="${formatLine//%%BNC_SSL%%/${bncSsl}}"
+  formatLine="${formatLine//%%BNC_TIMEOUT%%/${bncTimeout}}"
+  formatLine="${formatLine//%%BNC_TLD%%/${bncTld}}"
+  formatLine="${formatLine//%%BNC_COUNTRY%%/${bncCountry}}"
+  formatLine="${formatLine//%%BNC_NICKNAME%%/${bncNickname}}"
+  formatLine="${formatLine//%%BNC_LOCATION%%/${bncLocation}}"
+  formatLine="${formatLine//%%BNC_STATUS%%/${bncStatus}}"
+  formatLine="${formatLine//%%BNC_LAST_CHECKED%%/${bncLastChecked}}"
+  
+  formatLine="${formatLine//%%BNC_HOST_HEXADECIMAL%%/$(ip2hex ${bncHost})}"
+  formatLine="${formatLine//%%BNC_HOST_DECIMAL%%/$(ip2dec ${bncHost})}"
+
+  # can only be set if the bouncer is up
+  if [[ ${bncStatus} -eq 1 ]]; then
+    formatLine="${formatLine//%%BNC_PING_TIME%%/${bncPingTime}}"
+    formatLine="${formatLine//%%BNC_LOGIN_TIME%%/${bncLoginTime}}"
+    formatLine="${formatLine//%%BNC_HOPS%%/${bncHops}}"
+  else
+    formatLine="${formatLine//%%CURL_ERROR_CODE%%/${curlErrorCode}}"
+    formatLine="${formatLine//%%CURL_ERROR_DESCRIPTION%%/${curlErrorDescription}}"
+  fi
+  
+
+  # finally assign the formatted line, so we can output it
+  BOUNCER_OUTPUT["${bncUniqueName}"]="${formatLine}"
+
+} #; function format_output <format_line> <bncNumber> <bncUniqueName> <bncName> <bncHost> <bncPort> <bncUser> <bncPassword> 
+  #;                        <bncSsl> <bncTimeout> <bncTld> <bncCountry> <bncNickname> <bncLocation> <bncPingTime> <bncLoginTime> 
+  #;                        <bncHops> <bncStatus> <bncLastChecked>
 
 #
 # BEGIN!
@@ -438,7 +558,7 @@ echo "TODO"
 #
 # first split the settings line and assign it to variables
 #
-bnc_number=1
+declare -i currentBncNumber=1
 for bouncer in "${!BOUNCER[@]}"; do
   # save IFS to restore it later
   oIFS="${IFS}"
@@ -479,6 +599,9 @@ for bouncer in "${!BOUNCER[@]}"; do
   host="${splittedHost[0]}"
   port="${splittedHost[1]}"
 
+  # (re)assign the current name
+  CURRENT_BNC_NAME="${name}"
+
 
   # reset IFS
   IFS="${oIFS}"
@@ -496,32 +619,20 @@ for bouncer in "${!BOUNCER[@]}"; do
   output=""
 
   # BNC is up
-  if [[ $BNC_STATUS -eq 0 ]]; then
-    # format the ipAddress
-    formattedIPAddress=""
-    if ${FORMAT_DECIMAL}; then
-      formattedIPAddress="$(ip2dec ${host}):${port}"
-    elif ${FORMAT_HEXADEICMAL}; then
-      formattedIPAddress="$(ip2hex ${host}):${port}"
-    else
-      formattedIPAddress="${host}:${port}"
-    fi
-
-
+  if [[ $CURRENT_BNC_STATUS -eq 0 ]]; then
     if ${PING_HOST} && ${TRACEROUTE_HOST}; then #; get ping and hops
       get_ping "${host}" "${timeout}"
       get_hops "${host}"
-      output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": ${formattedIPAddress} -> ${description}, UP (ping: ${BNC_PING_TIME}ms, login: ${BNC_LOGIN_TIME}ms, hops: ${BNC_HOPS})!"
     elif ${PING_HOST}; then #; get ping only
       get_ping "${host}" "${timeout}"
-      output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": ${formattedIPAddress} -> ${description}, UP (ping: ${BNC_PING_TIME}ms, login: ${BNC_LOGIN_TIME}ms)!"
     elif ${TRACEROUTE_HOST}; then #; get hops only
       get_hops "${host}"
-      output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": ${formattedIPAddress} -> ${description}, UP (hops: ${BNC_HOPS})!"
-    else
-      output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": ${formattedIPAddress} -> ${description}, UP!"
     fi
+
+    format_output "${BOUNCER_ONLINE_OUTPUT["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${host}" "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${
   else #; BNC is down
+
+    format_output 
     # one could add way more conditions here, but I felt this is the most important one
     # if you want to add more custom error messages here, look the error codes up in k-curl_codes.sh
     case "${BNC_STATUS}" in
@@ -529,7 +640,7 @@ for bouncer in "${!BOUNCER[@]}"; do
         output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": $(ip2hex ${host}):${port} -> ${description}, DOWN! (timeout)"
       ;;
       *)
-        output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": $(ip2hex ${host}):${port} -> ${description}, ERROR ${BNC_STATUS} (${CURL_EXIT_CODES["${BNC_STATUS}"]}): ${CURL_EXIT_CODES_DESCRIPTION["${BNC_STATUS}"]}"
+        output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": $(ip2hex ${host}):${port} -> ${description}, ERROR ${CURRENT_BNC_STATUS} (${CURL_EXIT_CODES["${BNC_STATUS}"]}): ${CURL_EXIT_CODES_DESCRIPTION["${CURRENT_BNC_STATUS}"]}"
     esac
   fi
 
@@ -539,9 +650,9 @@ for bouncer in "${!BOUNCER[@]}"; do
 
   echo "${output}"
   # remove the leading zero again
-  if [[ ${bnc_number} =~ ^0 ]]; then
-    bnc_number=${bnc_number//0}
+  if [[ ${currentBncNumber} =~ ^0 ]]; then
+    currentBncNumber=${bnc_number//0}
   fi
 
-  ((bnc_number++))
+  ((currentBncNumber++))
 done
