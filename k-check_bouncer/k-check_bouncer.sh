@@ -36,8 +36,14 @@
 # Planned features:                                                    #
 #---                                                                   #
 # - Print the bouncers in order of pingtime, logintime or hops         #
+# - Provide a TCL script for your sitebot to output these bouncers     #
+# - Provide a BASH script for your glftpd installation to output these #
+#   bouncers aswell. I'm actually not sure if it is really needed ..   #
+#   .. but yea, why not. (:                                            #
+#---                                                                   #
+# Added features:                                                      #
 # - Make a complete new function to totally customize the output with  #
-#   variables like %%TLD%% etc                                         #
+#   variables like %%TLD%% etci (done! - 08/24/2016)                   #
 #---                                                                   #
 # Conclusion:                                                          #
 #---                                                                   #
@@ -48,7 +54,7 @@
 #                                                                      #
 #                                                                      #
 # Sincerly,                                                            #
-#  |k @ 20th August of 2o16                                            #
+#  |k @ 24th August of 2o16                                            #
 #----------------------------------------------------------------------#     
 # Changelog:                                                           #
 #---                                                                   #
@@ -56,6 +62,8 @@
 # v0.2k (8/20/2016) Commented the code properly                        #
 # v0.5k (8/20/2016) Function format_output added. Code improvements    #
 #                   NOT working in this state - next week more.        #
+# v0.7k (8/24/2016) Improved code. Function format_output updated.     #
+#                   More variables are now available.                  #
 #----------------------------------------------------------------------#
 
 
@@ -68,8 +76,8 @@ source k-curl_codes.sh || { echo "ERROR: k-curl_codes.sh could not be loaded!"; 
 exec 2>&9; exec 9>&-
 
 
-readonly BNC_USER="user"                                                # User to login to your site
-readonly BNC_PASSWORD="password"                                        # Password of the user
+readonly BNC_USER="user"						# User to login to your site
+readonly BNC_PASSWORD="password"         				# Password of the user
 readonly BNC_SSL=true                                                   # Connect to the bouncer via SSL
 declare -ir BNC_TIMEOUT=5                                               # Timeout of how long we should wait until we stop the connecting process
 readonly FORMAT_DECIMAL=true                                            # Output the IP address formatted as decimal          \   only one of these can be used
@@ -79,25 +87,29 @@ readonly TRACEROUTE_HOST=false                                          # Tracer
 declare -ir MAX_HOPS=25                                                 # Maximum hops it should trace - remember, the more hops the longer it takes and the longer the runtime of this script is
 readonly GLFTPD_ROOT_PATH="/glftpd"                                     # Well ..
 readonly BNC_FILE="/ftp-data/misc/bouncer.list"                         # File the bouncer data is stored in - relative path!
-readonly DEBUG=true                                                     # Get verbose output
+readonly DEBUG=false                                                    # Get verbose output
 readonly DATE_FORMAT="%D %H:%M:%S %Z"                                   # Format the output from GNU date (date -h too check whats possible) - remember: garbage in, garbage out!
+readonly PREFIX_ZERO=true                                               # Prefix a zero for the bouncer count while the bouncers are less than 10
 
 
 #
 # UNIQUE!! name needed to work properly
 # format: ip:port
 declare -Ar BOUNCER=(
+  ["Netherlands"]="127.0.0.1:31337"
+  ["Sweden"]="127.0.0.1:31337"
 )
 
 
 
 #
 # these are the settings for each bouncer, you defined above
-# format: TIMEOUT_SEC:BNC_USER:BNC_PASSWORD:BNC_SSL:BNC_TLD:BNC_COUNTRY:BNC_NICKNAME:BNC_LOCATION
+# format: [uniqueName]="TIMEOUT_SEC%BNC_USER%BNC_PASSWORD%BNC_SSL%BNC_TLD%BNC_COUNTRY%BNC_NICKNAME%BNC_CITY%BNC_ISP%BNC_DESCRIPTION"
 #
 declare -Ar BOUNCER_SETTINGS=(
+  ["Sweden"]="${BNC_TIMEOUT}%\"${BNC_USER}\"%\"${BNC_PASSWORD}\"%\"${BNC_SSL}\"%\"se\"%\"Sweden\"%\"Viggo\"%\"Stockholms Lan\\Stockholm\"%\"GleSYS Internet Services AB\"%\"Sweden woop\""
+  ["Netherlands"]="${BNC_TIMEOUT}%\"${BNC_USER}\"%\"${BNC_PASSWORD}\"%\"${BNC_SSL}\"%\"nl\"%\"Netherlands\"%\"Daan\"%\"Zuid-Holland\\Rotterdam\"%\"i3d B.V.\"%\"Netherlands woop woop\""
 )
-
 
 
 #
@@ -119,20 +131,46 @@ declare -Ar BOUNCER_SETTINGS=(
 # %%BNC_TLD%%                 -> TLD from $BOUNCER_SETTINGS                                                                 < online, offline
 # %%BNC_COUNTRY%%             -> Name of the country from $BOUNCER_SETTINGS                                                 < online, offline
 # %%BNC_NICKNAME%%            -> Nickname of the bouncer from $BOUNCER_SETTINGS                                             < online, offline
-# %%BNC_LOCATION%%            -> Location of the bouncer (city) from $BOUNCER_SETTINGS                                      < online, offline
+# %%BNC_CITY%%                -> City where the bouncer is located from $BOUNCER_SETTINGS                                   < online, offline
+# %%BNC_ISP%%                 -> ISP where the bouncer is located from $BOUNCER_SETTINGS                                    < online, offline
+# %%BNC_DESCRIPTION%%         -> Description of the bouncer from $BOUNCER_SETTINGS                                          < online, offline
 # %%BNC_PING_TIME%%           -> Pingtime of the bouncer (calculated)                                                       < online
 # %%BNC_LOGIN_TIME%%          -> Logintime of the bouncer (calculated)                                                      < online
 # %%BNC_HOPS%%                -> Hops to the bouncer (calculated)                                                           < online
 # %%BNC_LAST_CHECKED%%        -> Time when the bouncer was checked the last time (calculated)                               < online, offline
 # %%CURL_ERROR_CODE%%         -> Error code of curl (if an error while connecting happens)                                  < offline
+# %%CURL_ERROR%%              -> Error name of curl (if an error while connecting happens)                                  < offline
 # %%CURL_ERROR_DESCRIPTION%%  -> Description of the curl error (if an error while connecting happens)                       < offline
 #
 
 declare -A BOUNCER_ONLINE_TEMPLATE=(
+  ["Korea"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%% (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Sweden"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Netherlands"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Congo"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["France"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Germany"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Hungary"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Russia"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Czechia"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["UnitedKingdom"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Sweden2"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
+  ["Netherlands2"]="Bouncer #%%BNC_NUMBER%% (%%BNC_UNIQUE_NAME%%): Reachable at %%BNC_HOST%%:%%BNC_PORT%%  (dec: %%BNC_HOST_DECIMAL%%, hex: %%BNC_HOST_HEXADECIMAL%%) with %%BNC_USER%%/%%BNC_PASSWORD%%. Timeout was set to %%BNC_TIMEOUT%%. Connection was established via SSL (yes/no: %%BNC_SSL%%). TLD: %%BNC_TLD%%, country: %%BNC_COUNTRY%%/%%BNC_CITY%%, ISP: %%BNC_ISP%%, description: %%BNC_DESCRIPTION (last checked @ %%BNC_LAST_CHECKED%%)"
 )
 
 declare -A BOUNCER_OFFLINE_TEMPLATE=(
-  
+  ["Korea"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Sweden"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Netherlands"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Congo"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["France"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Germany"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Hungary"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Russia"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Czechia"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["UnitedKingdom"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Sweden2"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
+  ["Netherlands2"]="#%%BNC_NUMBER%% (.%%BNC_TLD%%) DN!: %%BNC_HOST_HEXADECIMAL%%:%%BNC_PORT%% located in %%BNC_COUNTRY%%\%%BNC_CITY%% at %%BNC_ISP%% (Error Code: %%CURL_ERROR_CODE%% (%%CURL_ERROR%%): %%CURL_ERROR_DESCRIPTION%%) (last check: %%BNC_LAST_CHECKED%%)"
 )
 
 #                                            #
@@ -185,12 +223,6 @@ function init () {
     echo "DEBUG: '${@}'"
   fi
 
-  # OBSOLETE
-  [[ "${FORMAT_DECIMAL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${FORMAT_DECIMAL}') for 'FORMAT_DECIMAL' set. Only 'true' or 'false (without '') is valid."; exit 1; }
-  [[ "${FORMAT_HEXADECIMAL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${FORMAT_HEXADECIMAL}') for 'FORMAT_HEXADECIMAL' set. Only 'true' or 'false (without '') is valid."; exit 1; }
-  ( [ ${FORMAT_DECIMAL} ] && [ ${FORMAT_HEXADECIMAL} ] ) || { echo "ERROR: Both 'FORMAT_DECIMAL' and 'FORMAT_HEXADECIMAL' are set - choose one of both."; exit 1; }
-
-
   # validate variables and values
   [ -n "${BNC_USER}" ] || { echo "ERROR: 'BNC_USER' is not set."; exit 1; }
   [ -n "${BNC_PASSWORD}" ] || { echo "ERROR: 'BNC_PASSWORD' is not set."; exit 1; }
@@ -204,6 +236,7 @@ function init () {
     ( [ ${MAX_HOPS} -lt 256 ] && [ ${MAX_HOPS} -gt 0 ] ) || { echo "ERROR: Invalid value ('${MAX_HOPS}') for 'MAX_HOPS' set. Maximum allowed is 255 and minimum allowed is 1."; exit 1; }
   fi
   [[ "${DEBUG}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${DEBUG}') for 'DEBUG' set. Only 'true' and' 'false' (without '') is valid."; exit 1; }
+  [[ "${PREFIX_ZERO}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${PREFIX_ZERO}') for 'PREFIX_ZERO'. Only 'true' and 'false' (withouth '') is valid."; exit 1; }
 
   # check for necessary programs
   command -v curl 2>&1 > /dev/null || { echo "ERROR: 'curl' is needed to run this script!"; exit 1; }
@@ -467,8 +500,8 @@ function ip2hex () {
 
 #-----------------------------
 # format_output <format_line> <bncNumber> <bncUniqueName> <bncName> <bncHost> <bncPort> <bncUser> <bncPassword> 
-#               <bncSsl> <bncTimeout> <bncTld> <bncCountry> <bncNickname> <bncLocation> <bncPingTime> <bncLoginTime> 
-#               <bncHops> <bncStatus> <bncLastChecked> <curlErrorCode> <curlErrorDescription>
+#               <bncSsl> <bncTimeout> <bncTld> <bncCountry> <bncNickname> <bncCity> <bncIsp> <bncDescription> <bncPingTime> <bncLoginTime> 
+#               <bncHops> <bncStatus> <bncLastChecked> <curlErrorCode> <curlError> <curlErrorDescription>
 #------
 # Description:
 #  Replace the variables in the given string and set it into $BOUNCER_OUTPUT
@@ -488,10 +521,9 @@ function format_output () {
     echo "DEBUG: '${@}'"
   fi
 
-#  if [[ $# -lt 21 ]]; then
-#    echo "ERROR: Function 'format_output' did not recieve enough arguments!"; exit 1
-#  fi
-
+  if [[ $# -lt 24 ]]; then
+    echo "ERROR: Function 'format_output' did not recieve enough arguments!"; exit 1
+  fi
   local formatLine="${1}"
   local bncNumber="${2}"
   local bncUniqueName="${3}"
@@ -505,14 +537,42 @@ function format_output () {
   local bncTld="${11}"
   local bncCountry="${12}"
   local bncNickname="${13}"
-  local bncLocation="${14}"
-  local bncPingTime="${15}"
-  local bncLoginTime="${16}"
-  local bncHops="${17}"
-  local bncStatus="${18}"
-  local bncLastChecked="${19}"
-  local curlErrorCode="${20}"
-  local curlErrorDescription="${21}"
+  local bncCity="${14}"
+  local bncIsp="${15}"
+  local bncDescription="${16}"
+  local bncPingTime="${17}"
+  local bncLoginTime="${18}"
+  local bncHops="${19}"
+  local bncStatus="${20}"
+  local bncLastChecked="${21}"
+  local curlErrorCode="${22}"
+  local curlError="${23}"
+  local curlErrorDescription="${24}"
+
+ # echo "FormatLine..............: ${formatLine}"
+ # echo "BNC#....................: ${bncNumber}"
+ # echo "Unique Name.............: ${bncUniqueName}"
+ # echo "Name....................: ${bncName}"
+ # echo "Host....................: ${bncHost}"
+ # echo "Port....................: ${bncPort}"
+ # echo "User....................: ${bncUser}"
+ # echo "Password................: ${bncPassword}"
+ # echo "SSL used................: ${bncSsl}"
+ # echo "Timeout.................: ${bncTimeout}"
+ # echo "TLD.....................: ${bncTld}"
+ # echo "Country.................: ${bncCountry}"
+ # echo "Nickname................: ${bncNickname}"
+ # echo "City....................: ${bncCity}"
+ # echo "ISP.....................: ${bncIsp}"
+ # echo "Description.............: ${bncDescription}"
+ # echo "Ping.time...............: ${bncPingTime}"
+ # echo "Login.time..............: ${bncLoginTime}"
+ # echo "Hops....................: ${bncHops}"
+ # echo "BNC.status..............: ${bncStatus}"
+ # echo "Last.checked............: ${bncLastChecked}"
+ # echo "Curl.error.code.........: ${curlErrorCode}"
+ # echo "Curl.error..............: ${curlError}"
+ # echo "Curl.error.description..: ${curlErrorDescription}"
 
   # replace all variables
   formatLine="${formatLine//%%BNC_NUMBER%%/${bncNumber}}"
@@ -526,7 +586,9 @@ function format_output () {
   formatLine="${formatLine//%%BNC_TLD%%/${bncTld}}"
   formatLine="${formatLine//%%BNC_COUNTRY%%/${bncCountry}}"
   formatLine="${formatLine//%%BNC_NICKNAME%%/${bncNickname}}"
-  formatLine="${formatLine//%%BNC_LOCATION%%/${bncLocation}}"
+  formatLine="${formatLine//%%BNC_CITY%%/${bncCity}}"
+  formatLine="${formatLine//%%BNC_ISP%%/${bncIsp}}"
+  formatLine="${formatLine//%%BNC_DESCRIPTION/${bncDescription}}"
   formatLine="${formatLine//%%BNC_STATUS%%/${bncStatus}}"
   formatLine="${formatLine//%%BNC_LAST_CHECKED%%/${bncLastChecked}}"
   
@@ -534,11 +596,12 @@ function format_output () {
   formatLine="${formatLine//%%BNC_HOST_DECIMAL%%/$(ip2dec ${bncHost})}"
 
   # can only be set if the bouncer is up
-  if [[ ${bncStatus} -eq 1 ]]; then
+  if [[ ${bncStatus} -eq 0 ]]; then
     formatLine="${formatLine//%%BNC_PING_TIME%%/${bncPingTime}}"
     formatLine="${formatLine//%%BNC_LOGIN_TIME%%/${bncLoginTime}}"
     formatLine="${formatLine//%%BNC_HOPS%%/${bncHops}}"
-  else
+  else #; only available, when the bouncer has some sort of error
+    formatLine="${formatLine//%%CURL_ERROR%%/${curlError}}"
     formatLine="${formatLine//%%CURL_ERROR_CODE%%/${curlErrorCode}}"
     formatLine="${formatLine//%%CURL_ERROR_DESCRIPTION%%/${curlErrorDescription}}"
   fi
@@ -547,9 +610,9 @@ function format_output () {
   # finally assign the formatted line, so we can output it
   BOUNCER_OUTPUT["${bncUniqueName}"]="${formatLine}"
 
-} #; function format_output <format_line> <bncNumber> <bncUniqueName> <bncName> <bncHost> <bncPort> <bncUser> <bncPassword> 
-  #;                        <bncSsl> <bncTimeout> <bncTld> <bncCountry> <bncNickname> <bncLocation> <bncPingTime> <bncLoginTime> 
-  #;                        <bncHops> <bncStatus> <bncLastChecked>
+} #; format_output <format_line> <bncNumber> <bncUniqueName> <bncName> <bncHost> <bncPort> <bncUser> <bncPassword> 
+  #;               <bncSsl> <bncTimeout> <bncTld> <bncCountry> <bncNickname> <bncCity> <bncIsp> <bncDescription> <bncPingTime> <bncLoginTime> 
+  #;               <bncHops> <bncStatus> <bncLastChecked> <curlErrorCode> <curlError> <curlErrorDescription>
 
 #
 # BEGIN!
@@ -557,15 +620,26 @@ function format_output () {
 
 #
 # first split the settings line and assign it to variables
+# NOTE: Not explicitly declared as Integer, since we might need to prefix
+#       a zero, while the count is less than 10. Integers itself doesn't 
+#       allow prefixing zeroes, so it'll be automagically removed.
 #
-declare -i currentBncNumber=1
+currentBncNumber=1
 for bouncer in "${!BOUNCER[@]}"; do
+  # reset global variables
+  # yet, it is not really necessary, but I like to write clean code ;>
+  CURRENT_BNC_STATUS=-1
+  CURRENT_BNC_LOGIN_TIME=-1
+  CURRENT_BNC_PING_TIME=-1
+  CURRENT_BNC_HOPS=-1
+  CURRENT_BNC_NAME=""
+
   # save IFS to restore it later
   oIFS="${IFS}"
 
 
   # get the settings for the given bouncer, with adressing it with the name it has in the BOUNCER array
-  # and split it on '%', so we should end up with 6 indexes
+  # and split it on '%', so we should end up with 10 indexes
   settings="${BOUNCER_SETTINGS["${bouncer}"]}"
   set -- "${settings}"
   IFS="%"; declare -a splittedSettings=($*)
@@ -574,8 +648,8 @@ for bouncer in "${!BOUNCER[@]}"; do
   set -- "${host}"
   IFS=":"; declare -a splittedHost=($*)
 
-  # format is: TIMEOUT_SEC:BNC_USER:BNC_PASSWORD:BNC_SSL:BNC_COUNTRY_CODE:BNC_DISPLAY_NAME
-  if [[ ! ${#splittedSettings[@]} -eq 8 ]]; then
+  # format is: TIMEOUT_SEC%BNC_USER%BNC_PASSWORD%BNC_SSL%BNC_TLD%BNC_COUNTRY%BNC_NICKNAME%BNC_CITY%BNC_ISP%BNC_DESCRIPTION
+  if [[ ! ${#splittedSettings[@]} -eq 10 ]]; then
     echo "ERROR: Malformed: ${bouncer}"
     continue
   fi
@@ -591,67 +665,52 @@ for bouncer in "${!BOUNCER[@]}"; do
   password="${splittedSettings[2]//\"}"
   useSsl="${splittedSettings[3]//\"}"
   tld="${splittedSettings[4]//\"}"
-  name="${splittedSettings[5]//\"}"
-  alias="${splittedSettings[6]//\"}"
-  description="${splittedSettings[7]//\"}"
+  country="${splittedSettings[5]//\"}"
+  nickname="${splittedSettings[6]//\"}"
+  city="${splittedSettings[7]//\"}"
+  isp="${splittedSettings[8]//\"}"
+  description="${splittedSettings[9]//\"}"
 
   # no removing needed, but assigning :>
   host="${splittedHost[0]}"
   port="${splittedHost[1]}"
 
   # (re)assign the current name
-  CURRENT_BNC_NAME="${name}"
+  CURRENT_BNC_NAME="${bouncer}"
 
-
-  # reset IFS
+  # reset IFS again
   IFS="${oIFS}"
 
-  # prefix a zero
-  if [[ ${bnc_number} -lt 10 ]]; then
-    bnc_number=$(echo "0${bnc_number}")
+  # prefix a zero if requested
+  if ${PREFIX_ZERO} && [[ ${currentBncNumber} -lt 10 ]]; then
+    currentBncNumber="$(echo "0${currentBncNumber}")"
   fi
 
   # get the status of the bouncer
   get_status "${host}" "${port}" "${user}" "${password}" "${timeout}" ${useSsl}
 
-
-  # create status line
-  output=""
-
   # BNC is up
   if [[ $CURRENT_BNC_STATUS -eq 0 ]]; then
-    if ${PING_HOST} && ${TRACEROUTE_HOST}; then #; get ping and hops
+    # get ping and hops
+    if ${PING_HOST} && ${TRACEROUTE_HOST}; then
       get_ping "${host}" "${timeout}"
       get_hops "${host}"
-    elif ${PING_HOST}; then #; get ping only
+    # get ping only
+    elif ${PING_HOST}; then
       get_ping "${host}" "${timeout}"
-    elif ${TRACEROUTE_HOST}; then #; get hops only
+    # get hops only
+    elif ${TRACEROUTE_HOST}; then
       get_hops "${host}"
     fi
 
-    format_output "${BOUNCER_ONLINE_OUTPUT["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${host}" "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${
+    format_output "${BOUNCER_ONLINE_TEMPLATE["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${nickname}" "${host}" "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${country}" "${nickname}" "${city}" "${isp}" "${description}" "${CURRENT_BNC_PING_TIME}" "${CURRENT_BNC_LOGIN_TIME}" "${CURRENT_BNC_HOPS}" "${CURRENT_BNC_STATUS}" "$(date "+${DATE_FORMAT}")" "0" "0" "0"
   else #; BNC is down
-
-    format_output 
-    # one could add way more conditions here, but I felt this is the most important one
-    # if you want to add more custom error messages here, look the error codes up in k-curl_codes.sh
-    case "${BNC_STATUS}" in
-      28)
-        output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": $(ip2hex ${host}):${port} -> ${description}, DOWN! (timeout)"
-      ;;
-      *)
-        output="Bouncer #${bnc_number} ${name} (.${tld}) aka \"${alias}\": $(ip2hex ${host}):${port} -> ${description}, ERROR ${CURRENT_BNC_STATUS} (${CURL_EXIT_CODES["${BNC_STATUS}"]}): ${CURL_EXIT_CODES_DESCRIPTION["${CURRENT_BNC_STATUS}"]}"
-    esac
+    format_output "${BOUNCER_OFFLINE_TEMPLATE["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${nickname}" "${host}" "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${country}" "${nickname}" "${city}" "${isp}" "${description}" "${CURRENT_BNC_PING_TIME}" "${CURRENT_BNC_LOGIN_TIME}" "${CURRENT_BNC_HOPS}" "${CURRENT_BNC_STATUS}" "$(date "+${DATE_FORMAT}")" "${CURRENT_BNC_STATUS}" "${CURL_EXIT_CODES["${CURRENT_BNC_STATUS}"]}" "${CURL_EXIT_CODES_DESCRIPTION["${CURRENT_BNC_STATUS}"]}"
   fi
 
-  # append current time
-  output="$(echo "${output}" \(last checked: $(date +'%D %H:%M:%S %Z')))"
-
-
-  echo "${output}"
   # remove the leading zero again
   if [[ ${currentBncNumber} =~ ^0 ]]; then
-    currentBncNumber=${bnc_number//0}
+    currentBncNumber=${currentBncNumber//0}
   fi
 
   ((currentBncNumber++))
