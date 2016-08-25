@@ -63,8 +63,6 @@ proc k::list_bouncer::bnc_handle { nick uhost hand chan arg } {
 		return 0
 	} ;# if
 
-	global bouncerFile
-
 	# open file
 	set fileHandle [open $::k::list_bouncer::bouncerFile]
 	set fileContents [read $fileHandle]
