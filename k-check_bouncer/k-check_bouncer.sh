@@ -420,6 +420,7 @@ function init () {
   command -v curl 2>&1 > /dev/null || { echo "ERROR: 'curl' is needed to run this script!"; exit 1; }
   command -v sed 2>&1 > /dev/null ||{ echo "ERROR: 'sed' is needed to run this script!"; exit 1; }
   command -v printf 2>&1 > /dev/null || { echo "ERROR: 'printf' is needed to run this script!"; exit 1; }
+  command -v cat 2>&1 > /dev/null || { echo "ERROR: 'cat' is needed to run this script!"; exit 1; }
   [[ "${BASH_VERSION}" =~ ^4\. ]] || { echo "ERROR: BASH version 4.x is needed to run this script!;" exit 1; }
 
   # check for necessary binaries conditional (e.g. we don't need ping, if we are not going to use PING_HOST)  
