@@ -1,4 +1,19 @@
 #!/bin/bash
+#    ~     .         / ~
+#  *      /       \ /
+#     *  /     - --*-- ~
+# \  ^  //     *    \  _ ____ _
+# \\ | //_____   _\___________/_>
+#  \\|//|--==|\____\--=     /\
+# -==+==|->> |/-==/\\      /  \
+#  //|\\|   _/   /  \\_  \/.  /
+# //.| \\   \  _/___/_/_   \_/
+# /,;|<//\  _____ -==/_\__  \_/_
+#   .^// \\  | /   //\  \_>>_/_\ _
+# ,*_/    \. |/   //__\   \\   )\\\
+# `.|________/_____________\\_/_\\ \
+# ,'|_______/__\_/zNr/dS!_//__\\ _) \
+# `   --- -/-  <_\/________/_k!\/_>>
 #----------------------------------------------------------------------#
 #                      k-check_bouncer.sh v0.1k                        #
 #----------------------------------------------------------------------#
@@ -6,7 +21,7 @@
 #---                                                                   #
 # This is a script for sites with many or slow bouncers. Also it is    #
 # pretty helpful when a bouncer is down and blocking the sitebots      #
-# output since it still stuck with trying to login to the questionable #
+# output since its still stuck with trying to login to the questionable#
 # bouncer.                                                             #
 # What this script does is pretty simple:                              #
 # It checks your bouncers on a regulary basis - crontab ftw - and      #
@@ -16,34 +31,122 @@
 # !bnc feature?                                                        #
 #  - It does not block your sitebots output while trying to reach slow #
 #    or unreachable bouncers.                                          #
-#  - You have way more customization options, than with ngBot:         #
+#  - You have way more customization options, than with ngBot          #
 #  - It is possible to display the logintime, the pingtime and how     #
 #    many hops it actually need to reach the questionable bouncer      #
+#  - Sort output for pingTime, loginTime, numberOfHops and timeChecked #
 #  - Well .. its from me, so its good by design ;p                     #
 #---                                                                   #
 # Installation:                                                        #  
 #---                                                                   #
-# For the moment: no installation my friend                            #
+# First of all, the installation is pretty simple, unless you want to  #
+# sort your bouncers for ping time, login time, the number of hops or  #
+# the last time a bouncer was checked.                                 #
+#                                                                      #
+# > Basic installation:                                                #
+# Copy this script over to /glftpd/bin and do a chmod +x on it. Edit   #
+# the settings below, to fit your needs and add a cronjob like:        #
+# 5 * * * * /glftpd/bin/k-check_bouncer.sh 2>&1 > /dev/null            #
+# This cronjob runs every hour - five minutes after the full hour.     #
+#                                                                      #
+# In addition to that, you can use k-list_bouncer.sh, which is a       #
+# script to display the bouncer as site command or k-list_bouncer.tcl  #
+# which is meant as replacement for the ngBot !bnc command or as       #
+# addition to it. Refer to the installation in these files.            #
+#                                                                      #
+#                                                                      #
+# > ADVANCED installation:                                             #
+# This type of installation is only required if you are going to use   #
+# the sort features in this script. Namely sort for login and ping     #
+# time, as well as sort for number of hops or the time a bouncer was   #
+# last checked.                                                        #
+#                                                                      #
+# Here is the problem:                                                 #
+# BASH itself in its current stable version of 4.3.x does not support  #
+# the sorting of associative arrays for its values and retain the      #
+# order of keys.                                                       #
+# However BASH 4.4.x is introducing so called "BASH Built-ins", which  #
+# allows the user to load "plugins" written in native C/C++, which     #
+# will then be available as command within BASH, once enabled.         #
+# Luckily Geir "geirha" Hauge has written a BASH built-in for sorting  #
+# associative arrays and retains the keys, which is called "asort".    #
+# Thanks at this point geirha!                                         #
+# To enable this built-in, you have to checkout the current BASH devel #
+# branch and build some parts of it - however, as I know, most of the  #
+# users running this script are lazy asses, I included an already      #
+# built asort, which was built on a current stable Debian.             #
+# I haven't tried to use it on another box as mine, but if you are     #
+# lucky enough, its enough to copy it to /usr/lib/ and run ldconfig.   #
+#                                                                      #
+# So, the commands would be:                                           #
+#   cp asort /usr/lib                                                  #
+# and                                                                  #
+#   ldconfig                                                           #
+# Now try running                                                      #
+#   enable -f asort asort                                              #
+# If that command succeeds, you are lucky and don't need to build it   #
+# yourself.                                                            #
+# ... if that doesn't work, contiue reading.                           #
+#                                                                      #
+# > EXPERT installation:                                               #
+# If you are still looking forward to sort your bouncers, then we need #
+# a couple of things:                                                  #
+#   - git                                                              #
+#   - bison (BASH devel-headers is using yacc)                         #
+#   - build-essential (like gcc, make, etc .. )                        #
+#   - some other tools BASH needs to build (I don't know which tools   #
+#     you need exactly, but you'll figure that out :>)                 #
+#                                                                      #
+# Following steps need to be performed:                                #
+# 1. Checkout the current BASH source                                  #
+#    > git clone git://git.sv.gnu.org/bash.git                         #
+# 2. Enter the cloned repo, checkout the devel branch and pull any     #
+#    possible updates                                                  #
+#    > cd bash && git checkout devel && git pull                       #
+# 3. Configure the devel branch and install the devel-headers          #
+#    > ./configure                                                     #
+#    > make && make install-headers                                    #
+#    > make -C examples/loadables install-dev                          #
+# 4. Clone the builtins from geirha                                    #
+#    > cd .. && git clone https://github.com/geirha/bash-builtins.git  #
+# 5. Make all builtins, copy it to /usr/lib and update ldconfig        #
+#    > cd bash-builtins && make && cp asort /usr/lib && ldconfig       #
+# 6. Try loading asort                                                 #
+#    > enable -f asort asort                                           #
+#                                                                      #
+# If that didn't work out, you did something wrong. Try resolving it   #
+# yourself or simply don't sort your bouncers.                         #
+# ... or wait until BASH 4.4 gets stable - I bet it is way easier to   #
+# install built-ins to that time then.                                 #
+#                                                                      # 
 #---                                                                   #
 # Bugs:                                                                #
 #---                                                                   #
 # Not that I know of any, feel free to msg me - you know where!        #
-#                                                                      #
 #---                                                                   #
 # Planned features:                                                    #
 #---                                                                   #
-# - Print the bouncers in order of pingtime, logintime or hops         #
-# - Provide a TCL script for your sitebot to output these bouncers     #
-# - Provide a BASH script for your glftpd installation to output these #
-#   bouncers aswell. I'm actually not sure if it is really needed ..   #
-#   .. but yea, why not. (:                                            #
+#  - Extend TCL and BASH script to support the sorted bouncers         #
 #---                                                                   #
 # Added features:                                                      #
 # - Make a complete new function to totally customize the output with  #
-#   variables like %%TLD%% etci (done! - 08/24/2016)                   #
+#   variables like %%TLD%% etc (done! - 08/24/2016)                    #
+# - Print the bouncers in order of pingtime, logintime or              #
+#   hops (done! - 08/26/2016)                                          #
+# - Provide a TCL script for your sitebot to output these              #
+#   bouncers (done! - 08/25/2016)                                      #
+# - Provide a BASH script for your glftpd installation to output these #
+#   bouncers aswell (done! - 08/25/2016)                               #
 #---                                                                   #
 # Conclusion:                                                          #
 #---                                                                   #
+# Wow .. that was a big task. I thought I'll finish this in less than  #
+# one day, but I ended up adding more and more features, so it quickly #
+# blew up.                                                             #
+# In the end I'm happy I'm done and it looks quite ok to me - code-    #
+# and logicalwise, so I hope you'll enjoy it .. or naht :>             #
+#                                                                      #
+#                                                                      #
 # Feel free to share, edit, delete, burn, eat or whatever you wish to  #
 # do with this script. I made it for fun, so I don't care ;>           #
 #                                                                      #
@@ -51,7 +154,7 @@
 #                                                                      #
 #                                                                      #
 # Sincerly,                                                            #
-#  |k @ 24th August of 2o16                                            #
+#  |k @ 26th August of 2o16                                            #
 #----------------------------------------------------------------------#     
 # Changelog:                                                           #
 #---                                                                   #
@@ -64,6 +167,8 @@
 # v0.8k (8/24/2016) Added brief descriptions and commented             #
 #                   questionable code parts.                           #
 #                   And as always: Code improvements (:                #
+# v1.0k (8/26/2016) Realized sorting of bouncers. Cleaned code (multi- #
+#                   line strings ftw). Updated installation part       #
 #----------------------------------------------------------------------#
 
 
@@ -75,33 +180,52 @@ exec 9>&2; exec 2> /dev/null
 source k-curl_codes.sh || { echo "ERROR: k-curl_codes.sh could not be loaded!"; exec 2>&9; exec 9>&-; exit 1; }
 exec 2>&9; exec 9>&-
 
-#
-# General Settings
-#
-readonly BNC_USER="user"                                                # User to login to your site
-readonly BNC_PASSWORD="password"                                        # Password of the user
-readonly BNC_SSL=true                                                   # Connect to the bouncer via SSL
-declare -ir BNC_TIMEOUT=5                                               # Timeout of how long we should wait until we stop the connecting process
-readonly PING_HOST=true                                                 # Ping the host additionally to logging in
-readonly TRACEROUTE_HOST=true                                           # Traceroute the host and record the hops
-declare -ir MAX_HOPS=25                                                 # Maximum hops it should trace - remember, the more hops the longer it takes and the longer the runtime of this script is
-readonly GLFTPD_ROOT_PATH="/glftpd"                                     # Well ..
-readonly BNC_FILE="/ftp-data/misc/bouncer.list"                         # File the bouncer data is stored in - relative path!
-readonly DEBUG=false                                                    # Get verbose output
+#                                            #
+# <- S E T T I N G S  B E G I N  H E R E  -> #
+#                                            #
 
 #
-# Format/output settings
+# bouncer settings
 #
-readonly FORMAT_DECIMAL=true                                            # Output the IP address formatted as decimal          \   only one of these can be used
-readonly FORMAT_HEXADECIMAL=true                                        # Output the IP address formatted as hexadecimal      /   only one of these can be used
-readonly DATE_FORMAT="%D %H:%M:%S %Z"                                   # Format the output from GNU date (date -h too check whats possible) - remember: garbage in, garbage out!
-readonly PREFIX_ZERO=true                                               # Prefix a zero for the bouncer count while the bouncers are less than 10
-readonly ASCENDING=true                                                 # Sort output ascending (only relevant for $SORT_OUTPUT_FOR_BOUNCER_PING_TIME $SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME and
-                                                                        # $SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS
-# only one of these can be true!
-readonly SORT_OUTPUT_FOR_BOUNCER_PING_TIME=true                         # Sort the output for bouncer ping time
-readonly SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME=false                       # Sort the output for bouncer login time
-readonly SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS=false                   # Sort the output for number of hops
+readonly BNC_USER="user"                                                  # User to login to your site
+readonly BNC_PASSWORD="password"                                          # Password of the user
+readonly BNC_SSL=true                                                     # Connect to the bouncer via SSL
+declare -ir BNC_TIMEOUT=5                                                 # Timeout of how long we should wait until we stop the connecting process
+
+#
+# additional checks
+#
+readonly PING_HOST=false                                                  # Ping the host additionally to logging in
+readonly TRACEROUTE_HOST=false                                            # Traceroute the host and record the hops
+declare -ir MAX_HOPS=25                                                   # Maximum hops it should trace - remember, the more hops the longer it takes and the longer the runtime of this script is
+
+#
+# file settings
+#
+readonly GLFTPD_ROOT_PATH="/glftpd"                                       # Well ..
+readonly BNC_FILE="/ftp-data/misc/bouncer.list"                           # File the bouncer data is stored in - relative path!
+readonly BNC_FILE_PING_TIMES="/ftp-data/misc/bouncer_ping_times.list"     # File the bouncer data is stored in, when sorting for ping times - relative path!
+readonly BNC_FILE_LOGIN_TIMES="/ftp-data/misc/bouncer_login_times.list"   # File the bouncer data is stored in, when sorting for login times - relative path!
+readonly BNC_FILE_HOPS="/ftp-data/misc/bouncer_hops.list"                 # File the bouncer data is stored in, when sorting for number of hops - relative path!
+readonly BNC_FILE_LAST_CHECKED="/ftp-data/misc/bouncer_last_checked.list" # File the bouncer data is stored in, when sorting for last checked times - relative path!
+readonly DEBUG=false                                                      # Get verbose output
+
+#
+# Format/output/sort settings
+#
+readonly DATE_FORMAT="%D %H:%M:%S %Z"                                     # Format the output from GNU date (date -h too check whats possible) - remember: garbage in, garbage out!
+readonly PREFIX_ZERO=true                                                 # Prefix a zero for the bouncer count while the bouncers are less than 10
+readonly SORT_ASCENDING=true                                              # Sort output ascending (only relevant for $SORT_OUTPUT_FOR_BOUNCER_PING_TIME, $SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME,
+                                                                          # $SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS and $SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES)
+                                                                          # NOTE: I didn't split it in seperate boolean values for each sort type, since I can't imagine that somebody will
+                                                                          #       sort it descending and ascending mixed .. even descending makes (almost) no sense imho.
+#
+# additional sorts
+#
+readonly SORT_OUTPUT_FOR_BOUNCER_PING_TIME=true                           # Sort the output for bouncer ping time
+readonly SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME=false                         # Sort the output for bouncer login time
+readonly SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS=false                     # Sort the output for number of hops
+readonly SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES=false                 # Sort the output for the time the bouncer was last checked
 
 
 # 
@@ -141,7 +265,7 @@ declare -Ar BOUNCER=(
 # Format:
 #   ["uniqueName"]="TIMEOUT_SEC%BNC_USER%BNC_PASSWORD%BNC_SSL%BNC_TLD%BNC_COUNTRY%BNC_NICKNAME%BNC_CITY%BNC_ISP%BNC_DESCRIPTION"
 # Example:
-#   ["Sweden1"]="10%\"${BNC_USER}\"%\"${BNC_PASSWORD}\"%\"${BNC_SSL}\"%\"se\"%\"Sweden\"%\"Daan\"%\"Stockholm Lan"%\"Sweden Telecom\"%\"Description comes here\""
+#   ["Sweden1"]="10%\"${BNC_USER}\"%\"${BNC_PASSWORD}\"%\"${BNC_SSL}\"%\"se\"%\"Sweden\"%\"Daan\"%\"Stockholm Lan\"%\"Sweden Telecom\"%\"Description comes here\""
 #     ^unique Name ^         ^          ^                   ^SSL         ^TLD   ^                    ^city           ^                  ^Description
 #                  ^timeout  ^          ^                                       ^country                             ^ISP
 #                            ^user      ^
@@ -205,6 +329,11 @@ declare -A BOUNCER_ONLINE_TEMPLATE=(
 declare -A BOUNCER_OFFLINE_TEMPLATE=(
 ) #; BOUNCER_OFFLINE_TEMPLATE
 
+#                                            #
+# < - S E T T I N G S  E N D  H E R E !  - > #
+#                                            #
+
+
 
 
 #                                            #
@@ -255,28 +384,45 @@ function init () {
     echo "DEBUG: Entered function 'init' with values:"
     echo "DEBUG: '${@}'"
   fi
-
+  
+  #
   # validate variables and values
-  [ -n "${BNC_USER}" ] || { echo "ERROR: 'BNC_USER' is not set."; exit 1; }
-  [ -n "${BNC_PASSWORD}" ] || { echo "ERROR: 'BNC_PASSWORD' is not set."; exit 1; }
-  [[ "${BNC_SSL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${BNC_SSL}') for 'BNC_SSL' set. Only 'true' or 'false' (without '') is valid."; exit 1; }
-  [[ "${BNC_TIMEOUT}" =~ ^[[:digit:]]+$ ]] || { echo "ERROR: Invalid value ('${BNC_TIMEOUT}') for 'BNC_TIMEOUT' set. Only digits are valid."; exit 1; }
-  [ ${BNC_TIMEOUT} -gt 0 ] || { echo "ERROR: A value of less than 1 makes no sense for timeout!"; exit 1; }
+  #
+
+  # check for boolean types - only allow 'true' and 'false' - w/o quotes  
   [[ "${PING_HOST}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${PING_HOST}') for 'PING_HOST' set. Only 'true' or 'false (without '') is valid."; exit 1; }
   [[ "${TRACEROUTE_HOST}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${TRACEROUTE_HOST}') for 'TRACEROUTE_HOST' set. Only 'true' or 'false (without '') is valid."; exit 1; }
+  [[ "${BNC_SSL}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${BNC_SSL}') for 'BNC_SSL' set. Only 'true' or 'false' (without '') is valid."; exit 1; }
+  [[ "${DEBUG}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${DEBUG}') for 'DEBUG' set. Only 'true' and' 'false' (without '') is valid."; exit 1; }
+  [[ "${PREFIX_ZERO}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${PREFIX_ZERO}') for 'PREFIX_ZERO'. Only 'true' and 'false' (without '') is valid."; exit 1; }
+  [[ "${SORT_OUTPUT_FOR_BOUNCER_PING_TIME}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${SORT_OUTPUT_FOR_BOUNCER_PING_TIME}') for 'SORT_OUTPUT_FOR_BOUNCER_PING_TIME'. "\
+										"Only 'true' and 'false' (without '') is valid."; exit 1; }
+  [[ "${SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME}') for 'SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME'. "\
+										"Only 'true' and 'false' (without '') is valid."; exit 1; }
+  [[ "${SORT_OUTPUT_FOR_BOUNCER_PING_TIME}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${SORT_OUTPUT_FOR_BOUNCER_PING_TIME}') for 'SORT_OUTPUT_FOR_BOUNCER_PING_TIME'. "\
+										"Only 'true' and 'false' (without '') is valid."; exit 1; }
+  [[ "${SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS}') for 'SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS'. "\
+										"Only 'true' and 'false' (without '') is valid."; exit 1; }
+  [[ "${SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES}') for "\
+										"'SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES'. Only 'true' and 'false' (without '') is valid."; exit 1; }
+
+  #  check for empty or invalid values
+  [ -n "${BNC_USER}" ] || { echo "ERROR: 'BNC_USER' is not set."; exit 1; }
+  [ -n "${BNC_PASSWORD}" ] || { echo "ERROR: 'BNC_PASSWORD' is not set."; exit 1; }
+  [[ "${BNC_TIMEOUT}" =~ ^[[:digit:]]+$ ]] || { echo "ERROR: Invalid value ('${BNC_TIMEOUT}') for 'BNC_TIMEOUT' set. Only digits are valid."; exit 1; }
+  [ ${BNC_TIMEOUT} -gt 0 ] || { echo "ERROR: A value of less than 1 makes no sense for timeout!"; exit 1; }
   if ${TRACEROUTE_HOST}; then
     [[ "${MAX_HOPS}" =~ ^[[:digit:]]+$ ]] || { echo "ERROR: Invalid value ('${MAX_HOPS}') for 'MAX_HOPS' set. Only digits are valid."; exit 1; }
     ( [ ${MAX_HOPS} -lt 256 ] && [ ${MAX_HOPS} -gt 0 ] ) || { echo "ERROR: Invalid value ('${MAX_HOPS}') for 'MAX_HOPS' set. Maximum allowed is 255 and minimum allowed is 1."; exit 1; }
   fi
-  [[ "${DEBUG}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${DEBUG}') for 'DEBUG' set. Only 'true' and' 'false' (without '') is valid."; exit 1; }
-  [[ "${PREFIX_ZERO}" =~ ^(true|false)$ ]] || { echo "ERROR: Invalid value ('${PREFIX_ZERO}') for 'PREFIX_ZERO'. Only 'true' and 'false' (withouth '') is valid."; exit 1; }
 
-  # check for necessary programs
+  # check for necessary binaries
   command -v curl 2>&1 > /dev/null || { echo "ERROR: 'curl' is needed to run this script!"; exit 1; }
   command -v sed 2>&1 > /dev/null ||{ echo "ERROR: 'sed' is needed to run this script!"; exit 1; }
   command -v printf 2>&1 > /dev/null || { echo "ERROR: 'printf' is needed to run this script!"; exit 1; }
   [[ "${BASH_VERSION}" =~ ^4\. ]] || { echo "ERROR: BASH version 4.x is needed to run this script!;" exit 1; }
-  
+
+  # check for necessary binaries conditional (e.g. we don't need ping, if we are not going to use PING_HOST)  
   if ${PING_HOST} && ! $(command -v ping 2>&1 > /dev/null);  then
     echo "ERROR: 'PING_HOST' is set, but you don't have 'ping', which is necessary to use this function"; exit 1
   fi
@@ -289,7 +435,9 @@ function init () {
     echo "ERROR: 'TRACEROUTE_HOST' is set, but you don't have 'bc', which is necessary to use this function!"; exit 1
   fi
 
-  # files/folders
+
+
+  # check for files and folders
   if [ ! -e "${GLFTPD_ROOT_PATH}" ] || [ ! -d "${GLFTPD_ROOT_PATH}" ] || [ ! -w "${GLFTPD_ROOT_PATH}" ]; then
     echo "ERROR: 'GLFTPD_ROOT_PATH' is either not a valid directory or it is not accessible for the current user!"; exit 1
   fi
@@ -298,7 +446,66 @@ function init () {
     echo "ERROR: 'BNC_FILE' '${GLFTPD_ROOT_PATH}${BNC_FILE}' either does not exist, is not a valid file or is not writeable for the current user!"; exit 1
   fi
 
-  
+
+  # check for files and folders conditionally (e.g. we don't  need BNC_FILE_PING_TIMES if SORT_OUTPUT_FOR_BOUNCER_PING_TIME is not true)
+  # ping times
+  if ${SORT_OUTPUT_FOR_BOUNCER_PING_TIME} && ( [ ! -e "${GLFTPD_ROOT_PATH}${BNC_FILE_PING_TIMES}" ] || \
+                                               [ ! -f "${GLFTPD_ROOT_PATH}${BNC_FILE_PING_TIMES}" ] || \
+                                               [ ! -w "${GLFTPD_ROOT_PATH}${BNC_FILE_PING_TIMES}" ] ); then
+    echo $(cat <<-EOS
+	ERROR: 'SORT_OUTPUT_FOR_BOUNCER_PING_TIME' is wanted, but the necessary file BNC_FILE_PING_TIMES '${GLFTPD_ROOT_PATH}${BNC_FILE_PING_TIMES}' either
+	does not exist, is not a valid file or is not writeable for the current user!
+	EOS
+	); exit 1
+  fi
+
+  # login times
+  if ${SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME} && ( [ ! -e "${GLFTPD_ROOT_PATH}${BNC_FILE_LOGIN_TIMES}" ] || \
+                                               [ ! -f "${GLFTPD_ROOT_PATH}${BNC_FILE_LOGIN_TIMES}" ] || \
+                                               [ ! -w "${GLFTPD_ROOT_PATH}${BNC_FILE_LOGIN_TIMES}" ] ); then
+    echo $(cat <<-EOS
+	ERROR: 'SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME' is wanted, but the necessary file BNC_FILE_LOGIN_TIMES '${GLFTPD_ROOT_PATH}${BNC_FILE_LOGIN_TIMES}' either
+	does not exist, is not a valid file or is not writeable for the current user!
+	EOS
+        ); exit 1
+  fi
+
+  # number of hops file
+  if ${SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS} && ( [ ! -e "${GLFTPD_ROOT_PATH}${BNC_FILE_HOPS}" ] || \
+                                               [ ! -f "${GLFTPD_ROOT_PATH}${BNC_FILE_HOPS}" ] || \
+                                               [ ! -w "${GLFTPD_ROOT_PATH}${BNC_FILE_HOPS}" ] ); then
+    echo $(cat <<-EOS
+	ERROR: 'SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS' is wanted, but the necessary file BNC_FILE_HOPS '${GLFTPD_ROOT_PATH}${BNC_FILE_HOPS}' either
+	does not exist, is not a valid file or is not writeable for the current user!
+	EOS
+        ); exit 1
+  fi
+
+  # last checked file
+  if ${SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES} && ( [ ! -e "${GLFTPD_ROOT_PATH}${BNC_FILE_LAST_CHECKED}" ] || \
+                                               [ ! -f "${GLFTPD_ROOT_PATH}${BNC_FILE_LAST_CHECKED}" ] || \
+                                               [ ! -w "${GLFTPD_ROOT_PATH}${BNC_FILE_LAST_CHECKED}" ] ); then
+    echo $(cat <<-EOS
+	ERROR: 'SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES' is wanted, but the necessary file BNC_FILE_LAST_CHECKED '${GLFTPD_ROOT_PATH}${BNC_FILE_LAST_CHECKED}' either
+	does not exist, is not a valid file or is not writeable for the current user!
+	EOS
+        ); exit 1
+  fi
+
+  # if sorting is requested, we need the bash built-in "asort" from geirha
+  if ${SORT_OUTPUT_FOR_BOUNCER_PING_TIME} || ${SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME} \
+     ${SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS} || ${SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES}; then
+    
+    exec 9>&2; exec 2> /dev/null
+    enable -f asort asort || { echo "ERROR: BASH built-in 'asort' is not available, but you requested sorting. Refer to the installation part above!"; exec 2>&9; exec 9>&-; exit 1; }
+    #          ^ yes, twice asort, this is not a bug 
+    exec 2>&9; exec 9>&-
+
+    command -v asort 2>&1 || { echo "ERROR: BASH built-in 'asort' is not working properly, but you requested sorting. Refer to the installation part above!"; exit 1; }
+  fi
+
+  # everything fine
+  return 0
 } #; init ( )
 
 
@@ -423,7 +630,6 @@ function get_ping () {
 
   # add it to the array of ping times
   BOUNCER_PING_TIMES["${CURRENT_BNC_NAME}"]="${CURRENT_BNC_PING_TIME}"
-  
 } #; function get_ping <host> <timeout> [count]
 
 
@@ -646,7 +852,14 @@ function format_output () {
   fi
 
   # replace all variables
-  formatLine="${formatLine//%%BNC_NUMBER%%/${bncNumber}}"
+
+  # bncNumber gets replaced later on, when the output is sorted, if
+  # sorting for ping times, login times or hops is requested
+  if ! ${SORT_OUTPUT_FOR_BOUNCER_PING_TIME} && ! ${SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME} && \
+     ! ${SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS} && ! ${SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES}; then
+    formatLine="${formatLine//%%BNC_NUMBER%%/${bncNumber}}"
+  fi
+
   formatLine="${formatLine//%%BNC_UNIQUE_NAME%%/${bncUniqueName}}"
   formatLine="${formatLine//%%BNC_HOST%%/${bncHost}}"
   formatLine="${formatLine//%%BNC_PORT%%/${bncPort}}"
@@ -687,6 +900,9 @@ function format_output () {
 #
 # BEGIN!
 #
+
+# check everything necessary to run this script
+init
 
 #
 # first split the settings line and assign it to variables
@@ -773,9 +989,24 @@ for bouncer in "${!BOUNCER[@]}"; do
       get_hops "${host}"
     fi
 
-    format_output "${BOUNCER_ONLINE_TEMPLATE["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${nickname}" "${host}" "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${country}" "${nickname}" "${city}" "${isp}" "${description}" "${CURRENT_BNC_PING_TIME}" "${CURRENT_BNC_LOGIN_TIME}" "${CURRENT_BNC_HOPS}" "${CURRENT_BNC_STATUS}" "$(date "+${DATE_FORMAT}")" "0" "0" "0"
+    # checking the bouncer for login, ping and hops is done, so we record this timestamp
+    # saving it into a seperate array, since maybe sorting for it is requested
+    BOUNCER_LAST_CHECKED_TIMES["${bouncer}"]="$(date +'%s')"
+
+    format_output "${BOUNCER_ONLINE_TEMPLATE["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${nickname}" "${host}" \
+                  "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${country}" "${nickname}" "${city}" \
+                  "${isp}" "${description}" "${CURRENT_BNC_PING_TIME}" "${CURRENT_BNC_LOGIN_TIME}" "${CURRENT_BNC_HOPS}" \
+                  "${CURRENT_BNC_STATUS}" "$(date --date "@${BOUNCER_LAST_CHECKED_TIMES["${bouncer}"]}" "+${DATE_FORMAT}")" "0" "0" "0"
   else #; BNC is down
-    format_output "${BOUNCER_OFFLINE_TEMPLATE["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${nickname}" "${host}" "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${country}" "${nickname}" "${city}" "${isp}" "${description}" "${CURRENT_BNC_PING_TIME}" "${CURRENT_BNC_LOGIN_TIME}" "${CURRENT_BNC_HOPS}" "${CURRENT_BNC_STATUS}" "$(date "+${DATE_FORMAT}")" "${CURRENT_BNC_STATUS}" "${CURL_EXIT_CODES["${CURRENT_BNC_STATUS}"]}" "${CURL_EXIT_CODES_DESCRIPTION["${CURRENT_BNC_STATUS}"]}"
+    # checking the bouncer for login, ping and hops is done, so we record this timestamp
+    # saving it into a seperate array, since maybe sorting for it is requested
+    BOUNCER_LAST_CHECKED_TIMES["${bouncer}"]="$(date +'%s')"
+
+    format_output "${BOUNCER_OFFLINE_TEMPLATE["${bouncer}"]}" "${currentBncNumber}" "${bouncer}" "${nickname}" "${host}" \
+                  "${port}" "${user}" "${password}" "${useSsl}" "${timeout}" "${tld}" "${country}" "${nickname}" "${city}" \
+                  "${isp}" "${description}" "${CURRENT_BNC_PING_TIME}" "${CURRENT_BNC_LOGIN_TIME}" "${CURRENT_BNC_HOPS}" \
+                  "${CURRENT_BNC_STATUS}" "$(date --date "@${BOUNCER_LAST_CHECKED_TIMES["${bouncer}"]}" "+${DATE_FORMAT}")" \
+                  "${CURRENT_BNC_STATUS}" "${CURL_EXIT_CODES["${CURRENT_BNC_STATUS}"]}" "${CURL_EXIT_CODES_DESCRIPTION["${CURRENT_BNC_STATUS}"]}"
   fi
 
   # remove the leading zero again
@@ -786,10 +1017,258 @@ for bouncer in "${!BOUNCER[@]}"; do
   ((currentBncNumber++))
 done
 
-# clear the file, we'll store the data into
+# sorting for ping time
+if ${SORT_OUTPUT_FOR_BOUNCER_PING_TIME}; then
+  # clear output file first
+  cat /dev/null > "${GLFTPD_ROOT_PATH}${BNC_FILE_PING_TIMES}"
+
+  if ${DEBUG}; then
+    echo "DEBUG: Sorting the output for the ping times."
+  fi
+
+  # sort the output via asort bash built-in - either ascending or descending 
+  # and save the keys into $bouncerSortedPingTime
+  if ${SORT_ASCENDING}; then
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting ascending."
+    fi
+    asort -ni bouncerSortedPingTimes BOUNCER_PING_TIMES
+  else #; sort descending
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting descending."
+    fi
+    asort -nir bouncerSortedPingTimes BOUNCER_PING_TIMES
+  fi
+
+  bncNumber=1
+  for pingTime in "${bouncerSortedPingTimes[@]}"; do
+    # prefix a zero if requested and bncNumber is less than 10
+    if ${PREFIX_ZERO} && [[ ${bncNumber} -lt 10 ]]; then
+      bncNumber=$(echo "0${bncNumber}")
+    fi
+   
+    # replace the bouncer number variable %%BNC_NUMBER%%
+    # sadly we need a temporary variable to do so .. :(
+    bouncerNumberLine="${BOUNCER_OUTPUT["${pingTime}"]}"
+    bouncerNumberLine="${bouncerNumberLine//%%BNC_NUMBER%%/${bncNumber}}"
+    BOUNCER_OUTPUT["${pingTime}"]="${bouncerNumberLine}"
+
+    if ${DEBUG}; then
+      echo "${BOUNCER_OUTPUT["${pingTime}"]}"
+    fi
+
+    echo "${BOUNCER_OUTPUT["${pingTime}"]}" >> "${GLFTPD_ROOT_PATH}${BNC_FILE_PING_TIMES}"
+
+    # remove the leading zero again
+    if [[ ${bncNumber} =~ ^0 ]]; then
+      bncNumber=${bncNumber//0}
+    fi
+
+    ((bncNumber++))
+  done
+fi
+
+
+# sorting for login time
+if ${SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME}; then
+  # clear output file first
+  cat /dev/null > "${GLFTPD_ROOT_PATH}${BNC_FILE_LOGIN_TIMES}"
+
+  if ${DEBUG}; then
+    echo "DEBUG: Sorting the output for the login time."
+  fi
+
+  # sort the output via asort bash built-in - either ascending or descending 
+  # and save the keys into $bouncerSortedLoginTimes
+  if ${SORT_ASCENDING}; then
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting ascending."
+    fi
+    asort -ni bouncerSortedLoginTimes BOUNCER_LOGIN_TIMES
+  else #; sort descending
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting descending."
+    fi
+    asort -nir bouncerSortedLoginTimes BOUNCER_LOGIN_TIMES
+  fi
+
+  bncNumber=1
+  for loginTime in "${bouncerSortedLoginTimes[@]}"; do
+    # prefix a zero if requested and bncNumber is less than 10
+    if ${PREFIX_ZERO} && [[ ${bncNumber} -lt 10 ]]; then
+      bncNumber=$(echo "0${bncNumber}")
+    fi
+
+    # replace the bouncer number variable %%BNC_NUMBER%%
+    # sadly we need a temporary variable to do so .. :(
+    bouncerNumberLine="${BOUNCER_OUTPUT["${loginTime}"]}"
+    bouncerNumberLine="${bouncerNumberLine//%%BNC_NUMBER%%/${bncNumber}}"
+    BOUNCER_OUTPUT["${loginTime}"]="${bouncerNumberLine}"
+
+    if ${DEBUG}; then
+      echo "${BOUNCER_OUTPUT["${loginTime}"]}"
+    fi
+
+    # save output
+    echo "${BOUNCER_OUTPUT["${loginTime}"]}" >> "${GLFTPD_ROOT_PATH}${BNC_FILE_LOGIN_TIMES}"
+
+    # remove the leading zero again
+    if [[ ${bncNumber} =~ ^0 ]]; then
+      bncNumber=${bncNumber//0}
+    fi
+
+    ((bncNumber++))
+  done
+fi
+
+
+# sorting for number of hops
+if ${SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS}; then
+  # clear output file first
+  cat /dev/null > "${GLFTPD_ROOT_PATH}${BNC_FILE_HOPS}"
+
+  if ${DEBUG}; then
+    echo "DEBUG: Sorting the output for the number of hops."
+  fi
+
+  # sort the output via asort bash built-in - either ascending or descending 
+  # and save the keys into $bouncerSortedHops
+  if ${SORT_ASCENDING}; then
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting ascending."
+    fi
+    asort -ni bouncerSortedHops BOUNCER_COUNT_OF_HOPS
+  else #; sort descending
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting descending."
+    fi
+    asort -nir bouncerSortedHops BOUNCER_COUNT_OF_HOPS
+  fi
+
+  bncNumber=1
+  for hop in "${bouncerSortedHops[@]}"; do
+    # prefix a zero if requested and bncNumber is less than 10
+    if ${PREFIX_ZERO} && [[ ${bncNumber} -lt 10 ]]; then
+      bncNumber=$(echo "0${bncNumber}")
+    fi
+
+    # replace the bouncer number variable %%BNC_NUMBER%%
+    # sadly we need a temporary variable to do so .. :(
+    bouncerNumberLine="${BOUNCER_OUTPUT["${hop}"]}"
+    bouncerNumberLine="${bouncerNumberLine//%%BNC_NUMBER%%/${bncNumber}}"
+    BOUNCER_OUTPUT["${hop}"]="${bouncerNumberLine}"
+    echo "${BOUNCER_OUTPUT["${hop}"]}"
+
+    if ${DEBUG}; then
+      echo "DEBUG: ${BOUNCER_OUTPUT["${hop}"]}"
+    fi
+
+    # save output
+    echo "${BOUNCER_OUTPUT["${hop}"]}" >> "${GLFTPD_ROOT_PATH}${BNC_FILE_HOPS}"
+
+    # remove the leading zero again
+    if [[ ${bncNumber} =~ ^0 ]]; then
+      bncNumber=${bncNumber//0}
+    fi
+
+    ((bncNumber++))
+  done
+fi
+
+
+# sorting for last checked times
+if ${SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES}; then
+  # clear output file first
+  cat /dev/null > "${GLFTPD_ROOT_PATH}${BNC_FILE_LAST_CHECKED}"
+
+  if ${DEBUG}; then
+    echo "DEBUG: Sorting the output for the last checked times."
+  fi
+
+  # sort the output via asort bash built-in - either ascending or descending 
+  # and save the keys into $bouncerSortedLastCheckedTimes
+  if ${SORT_ASCENDING}; then
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting ascending."
+    fi
+    asort -ni bouncerSortedLastCheckedTimes BOUNCER_LAST_CHECKED_TIMES
+  else #; sort descending
+    if ${DEBUG}; then
+      echo "DEBUG: Sorting descending."
+    fi
+    asort -nir bouncerSortedLastCheckedTimes BOUNCER_LAST_CHECKED_TIMES
+  fi
+
+  bncNumber=1
+  for checkTime in "${bouncerSortedLastCheckedTimes[@]}"; do
+    # prefix a zero if requested and bncNumber is less than 10
+    if ${PREFIX_ZERO} && [[ ${bncNumber} -lt 10 ]]; then
+      bncNumber=$(echo "0${bncNumber}")
+    fi
+
+    # replace the bouncer number variable %%BNC_NUMBER%%
+    # sadly we need a temporary variable to do so .. :(
+    bouncerNumberLine="${BOUNCER_OUTPUT["${checkTime}"]}"
+    bouncerNumberLine="${bouncerNumberLine//%%BNC_NUMBER%%/${bncNumber}}"
+    BOUNCER_OUTPUT["${checkTime}"]="${bouncerNumberLine}"
+
+    if ${DEBUG}; then
+      echo "DEBUG: ${BOUNCER_OUTPUT["${checkTime}"]}"
+    fi
+
+    # save output
+    echo "${BOUNCER_OUTPUT["${checkTime}"]}" >> "${GLFTPD_ROOT_PATH}${BNC_FILE_LAST_CHECKED}"
+
+    # remove the leading zero again
+    if [[ ${bncNumber} =~ ^0 ]]; then
+      bncNumber=${bncNumber//0}
+    fi
+
+    ((bncNumber++))
+  done
+fi
+
+# last but not least the unsorted output :)
+# clear file first again
 cat /dev/null > "${GLFTPD_ROOT_PATH}${BNC_FILE}"
 
-# redirect the output to the file
-for output in "${!BOUNCER_OUTPUT[@]}"; do
-  echo "${BOUNCER_OUTPUT["${output}"]}" >> "${GLFTPD_ROOT_PATH}${BNC_FILE}"
+# %%BNC_NUMBER%% needs replacement when sorting was requested
+bncNumber=1
+for unsorted in "${!BOUNCER_OUTPUT[@]}"; do
+  if ${DEBUG}; then
+     echo "${BOUNCER_OUTPUT["${unsorted}"]}"
+  fi
+
+  # we sorted before, so we need to replace %%BNC_NUMBER%%
+  if ${SORT_OUTPUT_FOR_BOUNCER_PING_TIME} || ${SORT_OUTPUT_FOR_BOUNCER_LOGIN_TIME} \
+     ${SORT_OUTPUT_FOR_BOUNCER_NUMBER_OF_HOPS} || ${SORT_OUTPUT_FOR_BOUNCER_LAST_CHECKED_TIMES}; then
+
+    # prefix a zero if requested and bncNumber is less than 10
+    if ${PREFIX_ZERO} && [[ ${bncNumber} -lt 10 ]]; then
+      bncNumber=$(echo "0${bncNumber}")
+    fi
+    # replace the bouncer number variable %%BNC_NUMBER%%
+    # sadly we need a temporary variable to do so .. :(
+    bouncerNumberLine="${BOUNCER_OUTPUT["${unsorted}"]}"
+    bouncerNumberLine="${bouncerNumberLine//%%BNC_NUMBER%%/${bncNumber}}"
+    BOUNCER_OUTPUT["${unsorted}"]="${bouncerNumberLine}"
+
+
+    # remove the leading zero again
+    if [[ ${bncNumber} =~ ^0 ]]; then
+      bncNumber=${bncNumber//0}
+    fi
+
+    ((bncNumber++))
+  fi
+
+  if ${DEBUG}; then
+    echo "DEBUG: ${BOUNCER_OUTPUT["${unsorted}"]}"
+  fi
+
+  # save output
+  echo "${BOUNCER_OUTPUT["${unsorted}"]}" >> "${GLFTPD_ROOT_PATH}${BNC_FILE}"
 done
+
+exit 0
+EOF
