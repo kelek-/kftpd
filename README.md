@@ -1,4 +1,4 @@
-# eggftpd
+# kftpd
 cat k-header.znr
 ```
     ~     .         / ~
@@ -24,6 +24,7 @@ Hello and welcome to my little script collection. Feel free to copy, modify, sha
 * **k-link_latest.sh** >> Link your latest NUM of releases to a defined directory
 * **k-mysqlquote.tcl** >> Quote script using MySQL as database for eggdrop
 * **k-check_bouncer** >> Check your bouncers w/o blocking your sitebots output
+* **k-base** >> A framework for BASH
 
 Enjoy!
 
