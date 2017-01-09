@@ -71,7 +71,7 @@ source k-base_errors.sh
 #
 declare -i __DEBUG=""                            # 
 declare __REPLACED_STRING=""                     # Variable stores the replaced string from kbase::replace_string
-declare -ar __REQUIERED_BINARIES=(
+declare -ar __REQUIERED_BINARIES=(               # Associative array, which holds all binaries needed from this script
   "sed"
   "printf"
 )
@@ -79,7 +79,7 @@ declare -ar __REQUIERED_BINARIES=(
 
 function kbase::init () {
   # BASH version v4.x is needed at least
-  # Note: This (lame) check works only until BASH version 9.x, after that a new check needs to be implemented
+  # Note: This (lame) check works only until BASH version 9.x, after that a new check needs to be implemented - let's see in 2133 if there is still need for that ;P
   [[ "${BASH_VERSION}" =~ ^[4-9]\. ]] || {
     echo "ERROR: You are running '${BASH_VERSION}', but this script needs at least BASH v4.x";
     exit 1;
@@ -209,8 +209,8 @@ function kbase::typeof_float () {
 #   Allow zero byte addresses: kbase::typeof_ipv4 "$ip" "1" "0" -> 0.0.0.0
 #
 #   Please note, that technically all IP addresses, which fragment values
-#   are more than 0, but less than 256, are perfectly valid. However it is
-#   not very common to write the address 192.168.140.1 as 192.168.140.001.
+#   are more than or equal 0, but less than 256, are perfectly valid. 
+#   However it is not very common to write the address 192.168.140.1 as 192.168.140.001.
 #   You can have validation for either of those cases by using the parameters
 #   as described.
 #----
@@ -350,9 +350,10 @@ function kbase::init_logging () {
 #------+---------+-------------------------------------------------->
 #   0 - (return): Everything went fine
 #   1 - (exit  ): Not enough arguments are given
-#   2 - (exit  ): Message level is 99 and no custom exitCode is given (NO error!)
-#   3 - (exit  ): Level has an invalid (non-integer) value set
-#   4 - (exit  ): Custom exitCode is given, but has an invalid (non-integer) value set
+#   2 - (exit  ): Level has an invalid (non-integer) value set
+#   3 - (exit  ): Custom exitCode is given, but has an invalid (non-integer) value set
+#   4 - (exit  ): Custom exitCode is given, but the exitCode is 99, which is reserved
+#  99 - (exit  ): Message level is 99 and no custom exitCode is given (NO error!)
 #-----------------------------
 function kbase::log () {
   [ "${#}" -ge 3 ] || {
@@ -365,7 +366,7 @@ function kbase::log () {
   declare -i level="${2}"
   declare -i lineNumber="${3}"
 
-  declare -i exitCode=2
+  declare -i exitCode=99
   # custom exitCode given
   [ -z "${4}" ] || {
     exitCode="${4}";
@@ -385,15 +386,23 @@ function kbase::log () {
     fi
     printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: Invalid value set for 'level'. Expected: Integer, Recieved: '${level}'.\n" "ERROR"
     printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: ${FUNCNAME[0]} was called from ${FUNCNAME[1]}.\n" "ERROR"
-    exit 3;
+    exit 2;
   fi
 
-  if [[ ! "$(kbase::typeof_int "${errorCode}")" -eq 0 ]]; then
+  if [[ ! "$(kbase::typeof_int "${exitCode}")" -eq 0 ]]; then
     if [ -n "${LOG_FILE}" ]; then
-        printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: Invalid value set for 'errorCode'. Expected: Integer, Recieved: '${errorCode}'.\n" "ERROR" >> "${LOG_FILE}"
+        printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: Invalid value set for 'exitCode'. Expected: Integer, Recieved: '${exitCode}'.\n" "ERROR" >> "${LOG_FILE}"
         printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: ${FUNCNAME[0]} was called from ${FUNCNAME[1]}.\n" "ERROR" >> "${LOG_FILE}"
     fi
-    printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: Invalid value set for 'errorCode'. Expected: Integer, Recieved: '${level}'.\n" "ERROR"
+    printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: Invalid value set for 'exitCode'. Expected: Integer, Recieved: '${exitCode}'.\n" "ERROR"
+    printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: ${FUNCNAME[0]} was called from ${FUNCNAME[1]}.\n" "ERROR"
+    exit 3;
+  elif [ "${exitCode}" -eq "99" ]; then
+    if [ -n "${LOG_FILE}" ]; then
+        printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: Invalid value set for 'exitCode'. Expected: Value less 99 Recieved: '${exitCode}'.\n" "ERROR" >> "${LOG_FILE}"
+        printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: ${FUNCNAME[0]} was called from ${FUNCNAME[1]}.\n" "ERROR" >> "${LOG_FILE}"
+    fi
+    printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: Invalid value set for 'exitCode'. Expected: Value less, Recieved: '${exitCode}'.\n" "ERROR"
     printf "[${timeStamp}] %-11s: ${FUNCNAME[0]}, line ${LINENO}: ${FUNCNAME[0]} was called from ${FUNCNAME[1]}.\n" "ERROR"
     exit 4;
   fi
