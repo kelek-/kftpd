@@ -25,6 +25,7 @@ Hello and welcome to my little script collection. Feel free to copy, modify, sha
 * **k-mysqlquote.tcl** >> Quote script using MySQL as database for eggdrop
 * **k-check_bouncer** >> Check your bouncers w/o blocking your sitebots output
 * **k-base** >> A framework for BASH
+* **k-help** >> Help engine for eggdrops
 
 Enjoy!
 
