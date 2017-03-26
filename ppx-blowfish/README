@@ -1,0 +1,3 @@
+This is simply an updated version of the famous blowfish encryption script from the mighty PERPLEX guys, to work with eggdrops latest and fastest message queue: putnow.
+
+Read the installation instructions in the blowcrypt.tcl
