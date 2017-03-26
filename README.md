@@ -26,6 +26,7 @@ Hello and welcome to my little script collection. Feel free to copy, modify, sha
 * **k-check_bouncer** >> Check your bouncers w/o blocking your sitebots output
 * **k-base** >> A framework for BASH
 * **k-help** >> Help engine for eggdrops
+* **ppx-blowfish** >> Blowfish encryption script from the mighty PERPLEX guys - updated to work with putnow :>
 
 Enjoy!
 
